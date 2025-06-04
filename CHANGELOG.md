@@ -1,3 +1,9 @@
+## [v4.0.2](https://github.com/docling-project/docling-parse/releases/tag/v4.0.2) - 2025-06-04
+
+### Fix
+
+* Setup hashlib for fips compliance ([#123](https://github.com/docling-project/docling-parse/issues/123)) ([`c9c452b`](https://github.com/docling-project/docling-parse/commit/c9c452b6ee39efc1ca9104a2c2721c47f3f8a5e6))
+
 ## [v4.0.1](https://github.com/docling-project/docling-parse/releases/tag/v4.0.1) - 2025-04-09
 
 ### Fix
