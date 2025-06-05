@@ -1,3 +1,9 @@
+## [v4.0.3](https://github.com/docling-project/docling-parse/releases/tag/v4.0.3) - 2025-06-05
+
+### Fix
+
+* Filenames with unicode chars on Windows ([#124](https://github.com/docling-project/docling-parse/issues/124)) ([`ec6556b`](https://github.com/docling-project/docling-parse/commit/ec6556b988d696e09227a9f8c5bf7a65bc843cae))
+
 ## [v4.0.2](https://github.com/docling-project/docling-parse/releases/tag/v4.0.2) - 2025-06-04
 
 ### Fix
