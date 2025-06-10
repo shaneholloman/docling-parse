@@ -1,3 +1,9 @@
+## [v4.0.4](https://github.com/docling-project/docling-parse/releases/tag/v4.0.4) - 2025-06-10
+
+### Fix
+
+* Fix cropbox if it is larger than mediabox ([#126](https://github.com/docling-project/docling-parse/issues/126)) ([`a157d5a`](https://github.com/docling-project/docling-parse/commit/a157d5a6bbfd338c74022f0bfe842ff67feb82f5))
+
 ## [v4.0.3](https://github.com/docling-project/docling-parse/releases/tag/v4.0.3) - 2025-06-05
 
 ### Fix
