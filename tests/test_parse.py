@@ -234,6 +234,8 @@ def test_reference_documents_from_filenames():
                 GROUNDTRUTH_FOLDER, rname + f".page_no_{page_no}.py.json"
             )
 
+            SPECIAL_SEPERATOR = "\t<|special_separator|>\n"
+
             if GENERATE or (not os.path.exists(fname)):
                 pred_page.save_as_json(fname)
 
@@ -242,10 +244,12 @@ def test_reference_documents_from_filenames():
                         cell_unit=unit,
                         add_fontkey=True,
                         add_fontname=False,
+                        add_location=True,
+                        add_text_direction=False,
                     )
                     _fname = fname + f".{unit}.txt"
                     with open(_fname, "w") as fw:
-                        fw.write("\n".join(lines))
+                        fw.write(SPECIAL_SEPERATOR.join(lines))
             else:
                 # print(f"loading from {fname}")
 
@@ -254,16 +258,25 @@ def test_reference_documents_from_filenames():
                         cell_unit=unit,
                         add_fontkey=True,
                         add_fontname=False,
+                        add_location=True,
+                        add_text_direction=False,
                     )
 
                     _fname = fname + f".{unit}.txt"
+
+                    lines = []
                     with open(_fname, "r") as fr:
-                        lines = fr.readlines()
+                        content = fr.read()
+                        lines = content.split(SPECIAL_SEPERATOR)
 
-                    olines = "".join(lines)
-                    _olines = "\n".join(_lines)
+                    assert len(lines) == len(
+                        _lines
+                    ), f"len(lines) == len(_lines) => {len(lines)} == {len(_lines)} from {_fname}"
 
-                    assert olines == _olines, "olines==_olines"
+                    for i, line in enumerate(lines):
+                        assert (
+                            line == _lines[i]
+                        ), f"line == _lines[i] => {line} == {_lines[i]} in line {i} for {_fname}"
 
                 true_page = SegmentedPdfPage.load_from_json(fname)
                 verify_SegmentedPdfPage(true_page, pred_page, filename=fname)
