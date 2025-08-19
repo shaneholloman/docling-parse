@@ -1,3 +1,9 @@
+## [v4.2.0](https://github.com/docling-project/docling-parse/releases/tag/v4.2.0) - 2025-08-19
+
+### Feature
+
+* Add page unloading ([#150](https://github.com/docling-project/docling-parse/issues/150)) ([`fe3482f`](https://github.com/docling-project/docling-parse/commit/fe3482f7d7a08fd1940840a64776dd14d0fb7eef))
+
 ## [v4.1.0](https://github.com/docling-project/docling-parse/releases/tag/v4.1.0) - 2025-06-24
 
 ### Feature
