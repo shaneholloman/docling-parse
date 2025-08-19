@@ -1,3 +1,9 @@
+## [v4.2.1](https://github.com/docling-project/docling-parse/releases/tag/v4.2.1) - 2025-08-19
+
+### Fix
+
+* Wheels.yml ([#152](https://github.com/docling-project/docling-parse/issues/152)) ([`499813b`](https://github.com/docling-project/docling-parse/commit/499813bcefc4b9a0f0cb90d7856a6d84ad9b62eb))
+
 ## [v4.2.0](https://github.com/docling-project/docling-parse/releases/tag/v4.2.0) - 2025-08-19
 
 ### Feature
