@@ -206,7 +206,7 @@ jobs:
           CIBW_BUILD: ${{ env.python_cp_version }}-${{ matrix.os.platform_id }}
           CIBW_ARCHS: auto x86_64 aarch64
           CIBW_PLATFORM: linux
-          CIBW_SKIP: "pp* *musllinux_* *_i686* *_s390* *pypy* *-linux_x86_64"
+          CIBW_SKIP: "pp* *musllinux_* *_i686* *_s390* *pypy*"
           CIBW_PROJECT_REQUIRES_PYTHON: "~=${{ matrix.python-version }}.0"
           CIBW_BUILD_VERBOSITY: 3
           BUILD_THREADS: "8"
@@ -329,6 +329,12 @@ jobs:
         with:
           merge-multiple: true
           path: dist/
+      - name: List dist/
+        run: |
+          ls ./dist
+      - name: Remove non-manylinux Linux wheels if found
+        run: |
+          rm -f ./dist/*-linux_x86_64.whl
       - name: List dist/
         run: |
           ls ./dist
