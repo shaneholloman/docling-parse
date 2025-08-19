@@ -1,3 +1,9 @@
+## [v4.2.2](https://github.com/docling-project/docling-parse/releases/tag/v4.2.2) - 2025-08-19
+
+### Fix
+
+* Filter out *-linux_x86_64.whl ([#153](https://github.com/docling-project/docling-parse/issues/153)) ([`a000923`](https://github.com/docling-project/docling-parse/commit/a0009237b8c809c13e93d67a9e91ac6b4490f65b))
+
 ## [v4.2.1](https://github.com/docling-project/docling-parse/releases/tag/v4.2.1) - 2025-08-19
 
 ### Fix
