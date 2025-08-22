@@ -1,3 +1,9 @@
+## [v4.2.3](https://github.com/docling-project/docling-parse/releases/tag/v4.2.3) - 2025-08-22
+
+### Fix
+
+* Media box ([#157](https://github.com/docling-project/docling-parse/issues/157)) ([`5ded3b8`](https://github.com/docling-project/docling-parse/commit/5ded3b8f7f12936ab390f8296814e2cdddc2da43))
+
 ## [v4.2.2](https://github.com/docling-project/docling-parse/releases/tag/v4.2.2) - 2025-08-19
 
 ### Fix
