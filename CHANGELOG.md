@@ -1,3 +1,9 @@
+## [v4.3.0](https://github.com/docling-project/docling-parse/releases/tag/v4.3.0) - 2025-09-03
+
+### Feature
+
+* Accelerate docling parse ([#161](https://github.com/docling-project/docling-parse/issues/161)) ([`1466548`](https://github.com/docling-project/docling-parse/commit/14665484763613586a4c18a38c84afbbaad9521c))
+
 ## [v4.2.3](https://github.com/docling-project/docling-parse/releases/tag/v4.2.3) - 2025-08-22
 
 ### Fix
