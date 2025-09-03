@@ -32,7 +32,14 @@ namespace pdflib
     
     void decode_document(std::string page_boundary, bool do_sanitization);
 
-    void decode_document(std::vector<int>& page_numbers, std::string page_boundary, bool do_sanitization);
+    void decode_document(std::vector<int>& page_numbers,
+			 std::string page_boundary,
+			 bool do_sanitization,
+			 bool keep_char_cells,
+			 bool keep_lines,
+			 bool keep_bitmaps,
+			 bool create_word_cells,
+			 bool create_line_cells);
 
     bool unload_pages();
 
@@ -225,6 +232,10 @@ namespace pdflib
   {
     LOG_S(INFO) << "start decoding all pages ...";        
     utils::timer timer;
+
+    bool keep_char_cells = true;
+    bool keep_lines = true; 
+    bool keep_bitmaps = true;
     
     nlohmann::json& json_pages = json_document["pages"];
     json_pages = nlohmann::json::array({});
@@ -242,7 +253,7 @@ namespace pdflib
 	update_timings(timings_, set_timer);
 	set_timer = false;
 
-        json_pages.push_back(page_decoder.get());
+        json_pages.push_back(page_decoder.get(keep_char_cells, keep_lines, keep_bitmaps, do_sanitization));
 
 	std::stringstream ss;
 	ss << "decoding page " << page_number++;
@@ -255,9 +266,20 @@ namespace pdflib
 
   void pdf_decoder<DOCUMENT>::decode_document(std::vector<int>& page_numbers,
 					      std::string page_boundary,
-					      bool do_sanitization)
+					      bool do_sanitization,
+					      bool keep_char_cells,
+					      bool keep_lines,
+					      bool keep_bitmaps,
+					      bool create_word_cells,
+					      bool create_line_cells)
   {
-    LOG_S(INFO) << "start decoding selected pages ...";        
+    LOG_S(INFO) << "start decoding selected pages ("
+		<< "keep_char_cells: " << keep_char_cells << ", "
+		<< "keep_lines: " << keep_lines << ", "
+		<< "keep_bitmaps: " << keep_bitmaps << ", "
+		<< "create_word_cells: " << create_word_cells << ", "
+      		<< "create_line_cells: " << create_line_cells << ")";  
+						   
     utils::timer timer;
 
     // make sure that we only return the page from the page-numbers
@@ -281,8 +303,27 @@ namespace pdflib
 	    
 	    update_timings(timings_, set_timer);
 	    set_timer=false;
+
+	    nlohmann::json page = page_decoder.get(keep_char_cells, keep_lines, keep_bitmaps, do_sanitization);
+
+	    pdf_sanitator<PAGE_CELLS> sanitizer;
+	    if(create_word_cells)
+	      {
+		LOG_S(INFO) << "creating word-cells in `original` (2)";        
+		
+		pdf_resource<PAGE_CELLS> word_cells = sanitizer.create_word_cells(page_decoder.get_page_cells());
+		page["original"]["word_cells"] = word_cells.get();
+	      }
+
+	    if(create_line_cells)
+	      {
+		LOG_S(INFO) << "creating line-cells in `original` (2)";        
+		
+		pdf_resource<PAGE_CELLS> line_cells = sanitizer.create_line_cells(page_decoder.get_page_cells());
+		page["original"]["line_cells"] = line_cells.get();
+	      }	    
 	    
-	    json_pages.push_back(page_decoder.get());
+	    json_pages.push_back(page);
 
 	    std::stringstream ss;
 	    ss << "decoding page " << page_number;
