@@ -275,47 +275,6 @@ class PdfDocument:
             bleed_bbox=bleed_bbox,
         )
 
-    """
-    def _to_cells(self, cells: dict) -> List[Union[PdfTextCell, TextCell]]:
-
-        assert "data" in cells, '"data" in cells'
-        assert "header" in cells, '"header" in cells'
-
-        data = cells["data"]
-        header = cells["header"]
-
-        result: List[Union[PdfTextCell, TextCell]] = []
-        for ind, row in enumerate(data):
-            rect = BoundingRectangle(
-                r_x0=row[header.index(f"r_x0")],
-                r_y0=row[header.index(f"r_y0")],
-                r_x1=row[header.index(f"r_x1")],
-                r_y1=row[header.index(f"r_y1")],
-                r_x2=row[header.index(f"r_x2")],
-                r_y2=row[header.index(f"r_y2")],
-                r_x3=row[header.index(f"r_x3")],
-                r_y3=row[header.index(f"r_y3")],
-            )
-            cell = PdfTextCell(
-                rect=rect,
-                text=row[header.index(f"text")],
-                orig=row[header.index(f"text")],
-                font_key=row[header.index(f"font-key")],
-                font_name=row[header.index(f"font-name")],
-                widget=row[header.index(f"widget")],
-                text_direction=(
-                    TextDirection.LEFT_TO_RIGHT
-                    if row[header.index(f"left_to_right")]
-                    else TextDirection.RIGHT_TO_LEFT
-                ),
-                index=ind,
-                rendering_mode=row[header.index(f"rendering-mode")],
-            )
-            result.append(cell)
-
-        return result
-    """
-
     def _to_cells(self, cells: dict) -> List[Union[PdfTextCell, TextCell]]:
         assert "data" in cells, '"data" in cells'
         assert "header" in cells, '"header" in cells'
@@ -481,14 +440,22 @@ class PdfDocument:
 
         if create_words and ("word_cells" in page):
             segmented_page.word_cells = self._to_cells(page["word_cells"])
-        elif create_words:
+            segmented_page.has_words = len(segmented_page.word_cells) > 0
+        elif keep_chars:
+            logging.warning(
+                "`words` will be created for segmented_page in an inefficient way!"
+            )
             self._create_word_cells(segmented_page, enforce_same_font=enforce_same_font)
         else:
             logging.warning("No `words` will be created for segmented_page")
 
-        if create_textlines and ("word_cells" in page):
+        if create_textlines and ("line_cells" in page):
             segmented_page.textline_cells = self._to_cells(page["line_cells"])
-        elif create_textlines:
+            segmented_page.has_lines = len(segmented_page.textline_cells) > 0
+        elif keep_chars:
+            logging.warning(
+                "`text_lines` will be created for segmented_page in an inefficient way!"
+            )
             self._create_textline_cells(
                 segmented_page, enforce_same_font=enforce_same_font
             )
@@ -501,11 +468,11 @@ class PdfDocument:
         self,
         segmented_page: SegmentedPdfPage,
         *,
+        horizontal_cell_tolerance: float = 1.0,
         space_width_factor_for_merge: float = 0.33,
         enforce_same_font: bool = True,
         _loglevel: str = "fatal",
     ):
-
         if len(segmented_page.word_cells) > 0:
             return
 
@@ -523,6 +490,7 @@ class PdfDocument:
 
         # data = sanitizer.create_word_cells(space_width_factor_for_merge=0.33)
         data = sanitizer.create_word_cells(
+            horizontal_cell_tolerance=horizontal_cell_tolerance,
             space_width_factor_for_merge=space_width_factor_for_merge,
             enforce_same_font=enforce_same_font,
         )
@@ -538,6 +506,7 @@ class PdfDocument:
         self,
         segmented_page: SegmentedPdfPage,
         *,
+        horizontal_cell_tolerance: float = 1.0,
         space_width_factor_for_merge: float = 1.0,
         space_width_factor_for_merge_with_space: float = 0.33,
         enforce_same_font: bool = True,
@@ -564,6 +533,7 @@ class PdfDocument:
 
         # data = sanitizer.create_line_cells()
         data = sanitizer.create_line_cells(
+            horizontal_cell_tolerance=horizontal_cell_tolerance,
             space_width_factor_for_merge=space_width_factor_for_merge,
             space_width_factor_for_merge_with_space=space_width_factor_for_merge_with_space,
             enforce_same_font=enforce_same_font,
