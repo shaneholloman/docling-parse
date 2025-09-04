@@ -1,3 +1,9 @@
+## [v4.4.0](https://github.com/docling-project/docling-parse/releases/tag/v4.4.0) - 2025-09-04
+
+### Feature
+
+* Reset to the old parameters in sanitation ([#163](https://github.com/docling-project/docling-parse/issues/163)) ([`0402b3f`](https://github.com/docling-project/docling-parse/commit/0402b3f0a3e05fbb298261f49494c530997b6ec4))
+
 ## [v4.3.0](https://github.com/docling-project/docling-parse/releases/tag/v4.3.0) - 2025-09-03
 
 ### Feature
