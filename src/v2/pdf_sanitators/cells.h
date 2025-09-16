@@ -28,7 +28,9 @@ namespace pdflib
 					       double space_width_factor_for_merge_with_space); //=0.33);
 
     
-    void remove_duplicate_chars(pdf_resource<PAGE_CELLS>& cells, double eps=1.0e-1);
+    //void remove_duplicate_chars(pdf_resource<PAGE_CELLS>& cells, double eps=1.0e-1);
+    void remove_adjacent_cells(pdf_resource<PAGE_CELLS>& cells, double eps); //=1.0e-1);
+    void remove_duplicate_cells(pdf_resource<PAGE_CELLS>& cells, double eps, bool same_line);
     
     void sanitize_bbox(pdf_resource<PAGE_CELLS>& cells,
 		       double horizontal_cell_tolerance, //=1.0,
@@ -203,7 +205,8 @@ namespace pdflib
     //return to_records(line_cells);
     return line_cells;
   }  
-  
+
+  /*
   void pdf_sanitator<PAGE_CELLS>::remove_duplicate_chars(pdf_resource<PAGE_CELLS>& cells, double eps)
   {
     while(true)
@@ -216,14 +219,14 @@ namespace pdflib
 	      {
 		continue;
 	      }
-
+	    
 	    for(int j=i+1; j<cells.size(); j++)
 	      {
 		if(not cells[j].active)
 		  {
 		    continue;
 		  }
-
+		
 		if(cells[i].font_name==cells[j].font_name and
 		   cells[i].text==cells[j].text and
 		   utils::values::distance(cells[i].r_x0, cells[i].r_y0, cells[j].r_x0, cells[j].r_y0)<eps and
@@ -236,7 +239,6 @@ namespace pdflib
 				   << "with r_2: (" << cells[i].r_x2 << ", " << cells[i].r_y2 << ") "
 				   << "with r'_0: (" << cells[j].r_x0 << ", " << cells[j].r_y0 << ") "
 				   << "with r'_2: (" << cells[j].r_x2 << ", " << cells[j].r_y2 << ") ";
-
 		    
 		    cells[j].active = false;
 		    erased_cell = true;		    
@@ -261,7 +263,87 @@ namespace pdflib
 
     cells = cells_;        
   }
+  */
 
+  //void pdf_sanitator<PAGE_CELLS>::remove_duplicate_chars(pdf_resource<PAGE_CELLS>& cells, double eps)
+  void pdf_sanitator<PAGE_CELLS>::remove_adjacent_cells(pdf_resource<PAGE_CELLS>& cells, double eps)
+  {
+    for(int i=0; i<cells.size(); i++)
+      {
+	if(not cells[i].active)
+	  {
+	    continue;
+	  }
+	
+	int j = i+1;
+	
+	if(j+1>=cells.size() or (not cells[j].active))
+	  {
+	    continue;
+	  }
+		
+	if(cells[i].font_name==cells[j].font_name and
+	   cells[i].text==cells[j].text and
+	   utils::values::distance(cells[i].r_x0, cells[i].r_y0, cells[j].r_x0, cells[j].r_y0)<eps and
+	   utils::values::distance(cells[i].r_x1, cells[i].r_y1, cells[j].r_x1, cells[j].r_y1)<eps and
+	   utils::values::distance(cells[i].r_x2, cells[i].r_y2, cells[j].r_x2, cells[j].r_y2)<eps and
+	   utils::values::distance(cells[i].r_x3, cells[i].r_y3, cells[j].r_x3, cells[j].r_y3)<eps)
+	  {
+	    LOG_S(WARNING) << "removing duplicate char with text: '" << cells[j].text << "' "
+			   << "with r_0: (" << cells[i].r_x0 << ", " << cells[i].r_y0 << ") "
+			   << "with r_2: (" << cells[i].r_x2 << ", " << cells[i].r_y2 << ") "
+			   << "with r'_0: (" << cells[j].r_x0 << ", " << cells[j].r_y0 << ") "
+			   << "with r'_2: (" << cells[j].r_x2 << ", " << cells[j].r_y2 << ") ";
+	    
+	    cells[j].active = false;
+	  }		
+      }
+
+    cells.remove_inactive_cells();
+  }
+
+  void pdf_sanitator<PAGE_CELLS>::remove_duplicate_cells(pdf_resource<PAGE_CELLS>& cells, double eps, bool same_line)
+  {
+    for(int i=0; i<cells.size(); i++)
+      {
+	if(not cells[i].active)
+	  {
+	    continue;
+	  }
+
+	for(int j=i+1; j<cells.size(); j++)
+	  {	
+	    if(same_line and std::abs(cells[i].r_y0-cells[j].r_y0)>eps)
+	      {
+		break;
+	      }
+
+	    if(not cells[j].active)
+	      {
+		continue;
+	      }
+
+	    if(cells[i].font_name==cells[j].font_name and
+	       cells[i].text==cells[j].text and
+	       utils::values::distance(cells[i].r_x0, cells[i].r_y0, cells[j].r_x0, cells[j].r_y0)<eps and
+	       utils::values::distance(cells[i].r_x1, cells[i].r_y1, cells[j].r_x1, cells[j].r_y1)<eps and
+	       utils::values::distance(cells[i].r_x2, cells[i].r_y2, cells[j].r_x2, cells[j].r_y2)<eps and
+	       utils::values::distance(cells[i].r_x3, cells[i].r_y3, cells[j].r_x3, cells[j].r_y3)<eps)
+	      {
+		LOG_S(WARNING) << "removing duplicate char with text: '" << cells[j].text << "' "
+			       << "with r_0: (" << cells[i].r_x0 << ", " << cells[i].r_y0 << ") "
+			       << "with r_2: (" << cells[i].r_x2 << ", " << cells[i].r_y2 << ") "
+			       << "with r'_0: (" << cells[j].r_x0 << ", " << cells[j].r_y0 << ") "
+			       << "with r'_2: (" << cells[j].r_x2 << ", " << cells[j].r_y2 << ") ";
+	    
+		cells[j].active = false;
+	      }
+	  }
+      }
+
+    cells.remove_inactive_cells();
+  }
+  
   void pdf_sanitator<PAGE_CELLS>::sanitize_text(pdf_resource<PAGE_CELLS>& cells)
   {
     for(int i=0; i<cells.size(); i++)
