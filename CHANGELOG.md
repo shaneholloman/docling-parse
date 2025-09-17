@@ -1,3 +1,9 @@
+## [v4.5.0](https://github.com/docling-project/docling-parse/releases/tag/v4.5.0) - 2025-09-17
+
+### Feature
+
+* Add perf tools ([#165](https://github.com/docling-project/docling-parse/issues/165)) ([`f8d53ee`](https://github.com/docling-project/docling-parse/commit/f8d53ee481689abd5f3abf843b4aba7944e74a83))
+
 ## [v4.4.0](https://github.com/docling-project/docling-parse/releases/tag/v4.4.0) - 2025-09-04
 
 ### Feature
