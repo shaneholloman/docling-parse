@@ -1,3 +1,9 @@
+## [v4.5.1](https://github.com/docling-project/docling-parse/releases/tag/v4.5.1) - 2025-10-16
+
+### Fix
+
+* Support pdf with only trim-bbox ([#173](https://github.com/docling-project/docling-parse/issues/173)) ([`76ab6b5`](https://github.com/docling-project/docling-parse/commit/76ab6b5d363f6c757b5270287a6585fe4f8394a0))
+
 ## [v4.5.0](https://github.com/docling-project/docling-parse/releases/tag/v4.5.0) - 2025-09-17
 
 ### Feature
