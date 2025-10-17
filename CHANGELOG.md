@@ -1,3 +1,9 @@
+## [v4.6.0](https://github.com/docling-project/docling-parse/releases/tag/v4.6.0) - 2025-10-17
+
+### Feature
+
+* Support for py3.14 ([#174](https://github.com/docling-project/docling-parse/issues/174)) ([`5caf1ff`](https://github.com/docling-project/docling-parse/commit/5caf1ffa70f73788fa16f37e865eb56d23a96384))
+
 ## [v4.5.1](https://github.com/docling-project/docling-parse/releases/tag/v4.5.1) - 2025-10-16
 
 ### Fix
