@@ -1,3 +1,9 @@
+## [v4.7.0](https://github.com/docling-project/docling-parse/releases/tag/v4.7.0) - 2025-10-20
+
+### Feature
+
+* Support reading password protected PDF ([#169](https://github.com/docling-project/docling-parse/issues/169)) ([`0c64402`](https://github.com/docling-project/docling-parse/commit/0c64402ddb98c49154f912ff514d721b4df672a4))
+
 ## [v4.6.0](https://github.com/docling-project/docling-parse/releases/tag/v4.6.0) - 2025-10-17
 
 ### Feature
