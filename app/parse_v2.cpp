@@ -82,6 +82,7 @@ int main(int argc, char* argv[]) {
       ("c,config", "Config file", cxxopts::value<std::string>())
       ("create-config", "Create config file", cxxopts::value<std::string>())
       ("p,page", "Pages to process (default: -1 for all)", cxxopts::value<int>()->default_value("-1"))
+      ("password", "Password for accessing encrypted, password-protected files", cxxopts::value<std::string>())
       ("o,output", "Output file", cxxopts::value<std::string>())
       ("l,loglevel", "loglevel [error;warning;success;info]", cxxopts::value<std::string>())
       ("h,help", "Print usage");
@@ -158,6 +159,9 @@ int main(int argc, char* argv[]) {
 
       auto config = create_config(ifile, ofile, page);
       LOG_S(INFO) << "config: \n" << config.dump(2);
+      if (result.count("password")) {
+        config["password"] = result["password"].as<std::string>();
+      }
 
       utils::timer timer;
 
