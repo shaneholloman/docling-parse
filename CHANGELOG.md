@@ -1,3 +1,9 @@
+## [v4.7.1](https://github.com/docling-project/docling-parse/releases/tag/v4.7.1) - 2025-11-05
+
+### Fix
+
+* 360 rotated pages ([#177](https://github.com/docling-project/docling-parse/issues/177)) ([`327dc4b`](https://github.com/docling-project/docling-parse/commit/327dc4ba13f69e2722a7300bdf0f05f933960ef6))
+
 ## [v4.7.0](https://github.com/docling-project/docling-parse/releases/tag/v4.7.0) - 2025-10-20
 
 ### Feature
