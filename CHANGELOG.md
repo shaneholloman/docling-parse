@@ -1,3 +1,9 @@
+## [v4.7.2](https://github.com/docling-project/docling-parse/releases/tag/v4.7.2) - 2025-12-02
+
+### Fix
+
+* "could not find the page-dimensions" error solved restoring the parent mediabox ([#181](https://github.com/docling-project/docling-parse/issues/181)) ([`1d3f78e`](https://github.com/docling-project/docling-parse/commit/1d3f78e514d6d85f7d0a13ae269f1781c04e49c5))
+
 ## [v4.7.1](https://github.com/docling-project/docling-parse/releases/tag/v4.7.1) - 2025-11-05
 
 ### Fix
