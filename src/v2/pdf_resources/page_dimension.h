@@ -339,6 +339,7 @@ namespace pdflib
         art_bbox = crop_bbox;
       }
     
+    // FIXME: cleanup and review the box priorities
     if((not initialised) and json_resources.count("/CropBox"))
       {
 	std::stringstream ss;
@@ -349,7 +350,7 @@ namespace pdflib
         initialised = true;
       }    
     //else if(not initialised)
-    else if((not initialised) and json_resources.count("/MediaBox"))
+    else if((not initialised) and (json_resources.count("/MediaBox") or (qpdf_resources.hasKey("/Parent") and qpdf_resources.getKey("/Parent").hasKey("/MediaBox"))))
       {
 	std::stringstream ss;
 	ss << "defaulting to media-box";	
