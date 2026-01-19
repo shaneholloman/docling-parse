@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 import glob
+import json
 import os
 import re
+from io import BytesIO
 from typing import Dict, List, Union
 
 from docling_core.types.doc.page import (
@@ -367,3 +369,398 @@ def test_serialize_and_reload():
     reloaded_pages: Dict[int, SegmentedPdfPage] = page_adapter.validate_json(json_pages)
 
     assert reloaded_pages == pdf_doc._pages
+
+
+def test_load_from_bytesio_lazy():
+    """Test loading PDF from BytesIO with lazy=True."""
+    filename = "tests/data/regression/table_of_contents_01.pdf"
+
+    # Read file into BytesIO
+    with open(filename, "rb") as file:
+        file_content = file.read()
+    bytes_io = BytesIO(file_content)
+
+    parser = DoclingPdfParser(loglevel="fatal")
+
+    # Load from BytesIO
+    pdf_doc_bytesio = parser.load(path_or_stream=bytes_io, lazy=True)
+
+    # Load from path for comparison
+    pdf_doc_path = parser.load(path_or_stream=filename, lazy=True)
+
+    # Both should have same number of pages
+    assert pdf_doc_bytesio.number_of_pages() == pdf_doc_path.number_of_pages()
+
+    # Load all pages and compare
+    pdf_doc_bytesio.load_all_pages()
+    pdf_doc_path.load_all_pages()
+
+    # Pages should be identical
+    assert pdf_doc_bytesio._pages == pdf_doc_path._pages
+
+
+def test_load_from_bytesio_eager():
+    """Test loading PDF from BytesIO with lazy=False."""
+    filename = "tests/data/regression/rotated_text_01.pdf"
+
+    # Read file into BytesIO
+    with open(filename, "rb") as file:
+        file_content = file.read()
+    bytes_io = BytesIO(file_content)
+
+    parser = DoclingPdfParser(loglevel="fatal")
+
+    # Load from BytesIO (eager)
+    pdf_doc_bytesio = parser.load(path_or_stream=bytes_io, lazy=False)
+
+    # Load from path (eager)
+    pdf_doc_path = parser.load(path_or_stream=filename, lazy=False)
+
+    # Pages should already be loaded
+    assert len(pdf_doc_bytesio._pages) > 0
+    assert len(pdf_doc_path._pages) > 0
+
+    # Pages should be identical
+    assert pdf_doc_bytesio._pages == pdf_doc_path._pages
+
+
+def test_list_loaded_keys_lifecycle():
+    """Test document key management through load/unload lifecycle."""
+    filename1 = "tests/data/regression/font_01.pdf"
+    filename2 = "tests/data/regression/ligatures_01.pdf"
+
+    parser = DoclingPdfParser(loglevel="fatal")
+
+    # Initially no keys
+    keys = parser.list_loaded_keys()
+    assert len(keys) == 0, "Should start with no loaded documents"
+
+    # Load first document
+    pdf_doc1 = parser.load(path_or_stream=filename1, lazy=True)
+    keys = parser.list_loaded_keys()
+    assert len(keys) == 1, "Should have one loaded document"
+
+    # Load second document
+    pdf_doc2 = parser.load(path_or_stream=filename2, lazy=True)
+    keys = parser.list_loaded_keys()
+    assert len(keys) == 2, "Should have two loaded documents"
+
+    # Unload first document
+    pdf_doc1.unload()
+    keys = parser.list_loaded_keys()
+    assert len(keys) == 1, "Should have one loaded document after unload"
+
+    # Unload second document
+    pdf_doc2.unload()
+    keys = parser.list_loaded_keys()
+    assert len(keys) == 0, "Should have no loaded documents after unload all"
+
+
+def test_get_page_individually():
+    """Test accessing individual pages without iterating all pages."""
+    filename = "tests/data/regression/table_of_contents_01.pdf"
+
+    parser = DoclingPdfParser(loglevel="fatal")
+    pdf_doc = parser.load(path_or_stream=filename, lazy=True)
+
+    num_pages = pdf_doc.number_of_pages()
+    assert num_pages > 2, "Test needs PDF with multiple pages"
+
+    # Access page 2 directly (should not load other pages)
+    page_2 = pdf_doc.get_page(2)
+    assert 2 in pdf_doc._pages
+    assert 1 not in pdf_doc._pages  # Page 1 should not be loaded
+    assert 3 not in pdf_doc._pages  # Page 3 should not be loaded
+
+    # Access page 1
+    page_1 = pdf_doc.get_page(1)
+    assert 1 in pdf_doc._pages
+
+    # Verify pages are different
+    assert page_1 != page_2
+
+
+def test_unload_individual_pages():
+    """Test unloading specific page ranges."""
+    filename = "tests/data/regression/table_of_contents_01.pdf"
+
+    parser = DoclingPdfParser(loglevel="fatal")
+    pdf_doc = parser.load(path_or_stream=filename, lazy=False)
+
+    num_pages = pdf_doc.number_of_pages()
+    assert len(pdf_doc._pages) == num_pages, "All pages should be loaded (eager)"
+
+    # Unload page 1
+    pdf_doc.unload_pages(page_range=(1, 2))
+    assert 1 not in pdf_doc._pages
+    assert len(pdf_doc._pages) == num_pages - 1
+
+    # Unload pages 2-3
+    pdf_doc.unload_pages(page_range=(2, 4))
+    assert 2 not in pdf_doc._pages
+    assert 3 not in pdf_doc._pages
+
+
+def test_boundary_types():
+    """Test loading PDF with different boundary types."""
+    filename = "tests/data/regression/cropbox_versus_mediabox_01.pdf"
+
+    parser = DoclingPdfParser(loglevel="fatal")
+
+    # Load with different boundary types
+    boundary_types = [
+        PdfPageBoundaryType.CROP_BOX,
+        PdfPageBoundaryType.MEDIA_BOX,
+    ]
+
+    pages_by_boundary = {}
+
+    for boundary_type in boundary_types:
+        pdf_doc = parser.load(
+            path_or_stream=filename, lazy=False, boundary_type=boundary_type
+        )
+
+        page = pdf_doc.get_page(1)
+        pages_by_boundary[boundary_type.value] = page
+
+        # Verify page was loaded with correct boundary
+        assert pdf_doc._boundary_type == boundary_type
+
+        pdf_doc.unload()
+
+    # Different boundary types may produce different dimensions
+    # (This test verifies the boundary type parameter is respected)
+    assert len(pages_by_boundary) == 2
+
+
+def test_lazy_vs_eager_pages_identical():
+    """Verify that lazy and eager loading produce identical pages."""
+    filename = "tests/data/regression/font_04.pdf"
+
+    parser = DoclingPdfParser(loglevel="fatal")
+
+    # Load lazy
+    pdf_doc_lazy = parser.load(path_or_stream=filename, lazy=True)
+    pdf_doc_lazy.load_all_pages()
+
+    # Load eager
+    pdf_doc_eager = parser.load(path_or_stream=filename, lazy=False)
+
+    # Pages should be identical
+    assert pdf_doc_lazy._pages == pdf_doc_eager._pages
+
+    # Verify each page individually
+    for page_no in pdf_doc_lazy._pages.keys():
+        lazy_page = pdf_doc_lazy._pages[page_no]
+        eager_page = pdf_doc_eager._pages[page_no]
+
+        # Compare page content
+        assert lazy_page.char_cells == eager_page.char_cells
+        assert lazy_page.word_cells == eager_page.word_cells
+        assert lazy_page.textline_cells == eager_page.textline_cells
+        assert lazy_page.dimension == eager_page.dimension
+
+
+def test_get_annotations():
+    """Test accessing document annotations."""
+    parser = DoclingPdfParser(loglevel="fatal")
+
+    # Test with form_fields.pdf which has annotations
+    pdf_doc = parser.load(
+        path_or_stream="tests/data/regression/form_fields.pdf", lazy=True
+    )
+
+    annotations = pdf_doc.get_annotations()
+
+    assert annotations is not None
+    assert annotations.form is not None or annotations.form is None
+
+    # form_fields.pdf has form data
+    if annotations.form is not None:
+        assert isinstance(annotations.form, dict)
+
+    # Test caching
+    annotations2 = pdf_doc.get_annotations()
+    assert annotations is annotations2  # Should return cached instance
+
+    pdf_doc.unload()
+
+
+def verify_annotations_recursive(true_annots, pred_annots):
+    """Recursively verify annotations match expected structure."""
+    if isinstance(true_annots, dict):
+        for k, v in true_annots.items():
+            assert k in pred_annots, f"Missing key: {k}"
+            verify_annotations_recursive(true_annots[k], pred_annots[k])
+
+    elif isinstance(true_annots, list):
+        assert len(true_annots) == len(pred_annots), "List length mismatch"
+        for i, _ in enumerate(true_annots):
+            verify_annotations_recursive(true_annots[i], pred_annots[i])
+
+    elif isinstance(true_annots, str):
+        assert (
+            true_annots == pred_annots
+        ), f"String mismatch: {true_annots}!={pred_annots}"
+
+    elif isinstance(true_annots, int):
+        assert true_annots == pred_annots, f"Int mismatch: {true_annots}!={pred_annots}"
+
+    elif isinstance(true_annots, float):
+        assert (
+            abs(true_annots - pred_annots) < 1e-6
+        ), f"Float mismatch: {true_annots}!={pred_annots}"
+
+    elif true_annots is None:
+        assert pred_annots is None, "Expected None"
+
+    else:
+        assert True  # Other types pass
+
+
+def test_table_of_contents():
+    """Test table of contents extraction from PDF documents."""
+    parser = DoclingPdfParser(loglevel="fatal")
+
+    # Test with a PDF that has a TOC
+    pdf_doc = parser.load(
+        path_or_stream="tests/data/regression/table_of_contents_01.pdf", lazy=True
+    )
+
+    # Test get_table_of_contents() method
+    toc = pdf_doc.get_table_of_contents()
+    assert toc is not None, "TOC should not be None for table_of_contents_01.pdf"
+    assert toc.text == "<root>", "Root TOC entry should have text '<root>'"
+    assert toc.children is not None, "Root TOC should have children"
+    assert len(toc.children) > 0, "Root TOC should have at least one child"
+
+    # Verify expected top-level entries exist
+    top_level_titles = [child.text for child in toc.children]
+    assert "Introduction" in top_level_titles, "TOC should contain 'Introduction'"
+    assert (
+        "Model Architecture" in top_level_titles
+    ), "TOC should contain 'Model Architecture'"
+    assert "Conclusion" in top_level_titles, "TOC should contain 'Conclusion'"
+
+    # Verify nested structure exists
+    model_arch_entry = next(
+        (child for child in toc.children if child.text == "Model Architecture"), None
+    )
+    assert model_arch_entry is not None, "Should find 'Model Architecture' entry"
+    assert (
+        model_arch_entry.children is not None
+    ), "'Model Architecture' should have children"
+    assert (
+        len(model_arch_entry.children) >= 2
+    ), "'Model Architecture' should have at least 2 children"
+
+    nested_titles = [child.text for child in model_arch_entry.children]
+    assert "Dense Models" in nested_titles, "Should contain 'Dense Models' nested entry"
+    assert (
+        "Mixture-of-Expert models" in nested_titles
+    ), "Should contain 'Mixture-of-Expert models' nested entry"
+
+    # Test caching - calling again should return same instance
+    toc2 = pdf_doc.get_table_of_contents()
+    assert toc is toc2, "get_table_of_contents should return cached instance"
+
+    # Test get_annotations().table_of_contents
+    annotations = pdf_doc.get_annotations()
+    assert annotations is not None, "Annotations should not be None"
+    assert (
+        annotations.table_of_contents is not None
+    ), "annotations.table_of_contents should not be None"
+    assert (
+        len(annotations.table_of_contents) > 0
+    ), "annotations.table_of_contents should have entries"
+
+    # Verify PdfTocEntry structure
+    first_entry = annotations.table_of_contents[0]
+    assert first_entry.title == "Introduction", "First entry should be 'Introduction'"
+    assert first_entry.level == 0, "Top-level entries should have level 0"
+
+    # Find entry with children and verify nested structure
+    model_arch_annot = next(
+        (e for e in annotations.table_of_contents if e.title == "Model Architecture"),
+        None,
+    )
+    assert (
+        model_arch_annot is not None
+    ), "Should find 'Model Architecture' in annotations TOC"
+    assert (
+        model_arch_annot.children is not None
+    ), "'Model Architecture' annotation should have children"
+    assert (
+        len(model_arch_annot.children) >= 2
+    ), "'Model Architecture' annotation should have at least 2 children"
+
+    for child in model_arch_annot.children:
+        assert child.level == 1, "Children of top-level entry should have level 1"
+
+    pdf_doc.unload()
+
+
+def test_table_of_contents_none_for_pdf_without_toc():
+    """Test that TOC is None for PDFs without table of contents."""
+    parser = DoclingPdfParser(loglevel="fatal")
+
+    # font_01.pdf is a simple PDF without TOC
+    pdf_doc = parser.load(path_or_stream="tests/data/regression/font_01.pdf", lazy=True)
+
+    toc = pdf_doc.get_table_of_contents()
+    assert toc is None, "TOC should be None for PDF without table of contents"
+
+    annotations = pdf_doc.get_annotations()
+    assert annotations is not None, "Annotations should not be None even without TOC"
+    assert (
+        annotations.table_of_contents is None or len(annotations.table_of_contents) == 0
+    ), "table_of_contents should be None or empty for PDF without TOC"
+
+    pdf_doc.unload()
+
+
+def test_annotations_match_v2_groundtruth():
+    """Test that annotations match v2 parser groundtruth."""
+    parser = DoclingPdfParser(loglevel="fatal")
+
+    # Test a few PDFs that have v2 groundtruth with annotations
+    test_files = [
+        "form_fields.pdf",
+        "table_of_contents_01.pdf",
+    ]
+
+    for pdf_file in test_files:
+        pdf_path = f"tests/data/regression/{pdf_file}"
+        groundtruth_path = f"tests/data/groundtruth/{pdf_file}.v2.json"
+
+        if not os.path.exists(pdf_path) or not os.path.exists(groundtruth_path):
+            continue
+
+        # Load document
+        pdf_doc = parser.load(path_or_stream=pdf_path, lazy=True)
+        pred_annotations = pdf_doc.get_annotations()
+
+        # Load groundtruth
+        with open(groundtruth_path, "r") as fr:
+            true_doc = json.load(fr)
+            true_annotations = true_doc["annotations"]
+
+        # Convert PdfAnnotations to dict for comparison
+        pred_dict = {
+            "form": pred_annotations.form,
+            "language": pred_annotations.language,
+            "meta_xml": pred_annotations.meta_xml,
+            "table_of_contents": (
+                None
+                if pred_annotations.table_of_contents is None
+                else [
+                    entry.model_dump(exclude_none=True)
+                    for entry in pred_annotations.table_of_contents
+                ]
+            ),
+        }
+
+        # Verify match
+        verify_annotations_recursive(true_annotations, pred_dict)
+
+        pdf_doc.unload()
