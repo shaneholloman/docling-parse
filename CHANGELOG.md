@@ -1,3 +1,13 @@
+## [v5.0.0](https://github.com/docling-project/docling-parse/releases/tag/v5.0.0) - 2026-01-20
+
+### Feature
+
+* Remove deprecated v1 api ([#189](https://github.com/docling-project/docling-parse/issues/189)) ([`adcb9b0`](https://github.com/docling-project/docling-parse/commit/adcb9b00e516bb0edcdf52444c4dbf7e69d4bae1))
+
+### Breaking
+
+* Remove deprecated v1 api ([#189](https://github.com/docling-project/docling-parse/issues/189)) ([`adcb9b0`](https://github.com/docling-project/docling-parse/commit/adcb9b00e516bb0edcdf52444c4dbf7e69d4bae1))
+
 ## [v4.7.3](https://github.com/docling-project/docling-parse/releases/tag/v4.7.3) - 2026-01-13
 
 ### Fix

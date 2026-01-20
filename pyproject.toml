@@ -1,6 +1,6 @@
 [project]
 name = "docling-parse"
-version = "4.7.3"
+version = "5.0.0"
 description = "Simple package to extract text with coordinates from programmatic PDFs"
 license = "MIT"
 keywords = ["docling", "pdf", "parser"]
