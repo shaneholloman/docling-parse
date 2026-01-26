@@ -1,3 +1,9 @@
+## [v5.1.0](https://github.com/docling-project/docling-parse/releases/tag/v5.1.0) - 2026-01-26
+
+### Feature
+
+* Remove python3.9 ([#200](https://github.com/docling-project/docling-parse/issues/200)) ([`d162c32`](https://github.com/docling-project/docling-parse/commit/d162c32bbdfb80cf8f769a3ade274cd62cc98ef7))
+
 ## [v5.0.0](https://github.com/docling-project/docling-parse/releases/tag/v5.0.0) - 2026-01-20
 
 ### Feature
