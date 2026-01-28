@@ -25,7 +25,8 @@ namespace pdflib
     pdf_resource<PAGE_FONT>& operator[](std::string fort_name);
 
     void set(nlohmann::json&   json_fonts,
-             QPDFObjectHandle& qpdf_fonts_);
+             QPDFObjectHandle& qpdf_fonts_,
+             pdf_timings& timings);
 
   private:
 
@@ -102,11 +103,14 @@ namespace pdflib
   }
   
   void pdf_resource<PAGE_FONTS>::set(nlohmann::json&   json_fonts,
-                                     QPDFObjectHandle& qpdf_fonts)
+                                     QPDFObjectHandle& qpdf_fonts,
+                                     pdf_timings& timings)
   {
     LOG_S(INFO) << __FUNCTION__;
 
-    for(auto& pair : json_fonts.items()) 
+    double total_font_time = 0.0;
+
+    for(auto& pair : json_fonts.items())
       {
         std::string     key = pair.key();
         nlohmann::json& val = pair.value();
@@ -115,21 +119,30 @@ namespace pdflib
 
 	if(qpdf_fonts.hasKey(key))
 	  {
-	    pdf_resource<PAGE_FONT> page_font;
+	    utils::timer font_timer;
+
+	    pdf_resource<PAGE_FONT> page_font(timings);
 	    page_font.set(key, val, qpdf_fonts.getKey(key));
-	    
+
 	    if(page_fonts.count(key)==1)
 	      {
 		LOG_S(WARNING) << "We are overwriting a font!";
+		page_fonts.erase(key);
 	      }
-	    
-	    page_fonts[key] = page_font;
+
+	    page_fonts.emplace(key, std::move(page_font));
+
+	    double font_time = font_timer.get_time();
+	    total_font_time += font_time;
+	    timings.add_timing(pdf_timings::PREFIX_DECODE_FONT + key, font_time);
 	  }
 	else
 	  {
 	    LOG_S(ERROR) << "qpdf does not have key: " << key;
 	  }
       }
+
+    timings.add_timing(pdf_timings::KEY_DECODE_FONTS_TOTAL, total_font_time);
   }
 
 }
