@@ -14,7 +14,7 @@ namespace pdflib
     cmap_parser();
     ~cmap_parser();
 
-    std::unordered_map<uint32_t, std::string> get() { return _map; }
+    cmap_value get();
 
     void print();
 
@@ -55,6 +55,27 @@ namespace pdflib
                    const std::string              src_end,
                    const std::vector<std::string> tgt);
 
+    // Helper to remove trailing null bytes from a string
+    static void remove_trailing_nulls(std::string& str);
+
+    // Helper to populate the map for a range of source codepoints.
+    // Detects identity mapping when tgts.size()==1 && tgts[0]==begin (maps i -> i).
+    // For non-identity, uses tgts and increments tgts.back() for each iteration.
+    //static void populate_range_mapping(uint32_t begin, uint32_t end,
+    //                                   std::vector<uint32_t>& tgts,
+    //                                   const std::pair<uint32_t, uint32_t>& csr_range,
+    //                                   std::unordered_map<uint32_t, std::string>& map,
+    //				         bool cache=true);
+    void populate_range_mapping(uint32_t begin, uint32_t end,
+                                std::vector<uint32_t>& tgts);
+    
+    // Legacy implementation - kept for comparison, uses mapping=="" check instead of identity detection
+    static void populate_range_mapping_legacy(uint32_t begin, uint32_t end,
+                                              const std::string& mapping,
+                                              std::vector<uint32_t>& tgts,
+                                              const std::pair<uint32_t, uint32_t>& csr_range,
+                                              std::unordered_map<uint32_t, std::string>& map);
+
   private:
 
     uint32_t                      char_count;
@@ -66,6 +87,8 @@ namespace pdflib
     std::pair<uint32_t, uint32_t> bf_range;
 
     std::unordered_map<uint32_t, std::string> _map;
+
+    cmap_value _cmap;
   };
 
   cmap_parser::cmap_parser():
@@ -74,6 +97,11 @@ namespace pdflib
 
   cmap_parser::~cmap_parser()
   {}
+
+  cmap_value cmap_parser::get()
+  {
+    return _cmap;
+  }
 
   void cmap_parser::print()
   {
@@ -148,6 +176,12 @@ namespace pdflib
 
             parameters.clear();
           }
+      }
+
+    // If identity was not set during populate_range_mapping, construct from _map
+    if(not _cmap.is_identity())
+      {
+        _cmap = cmap_value(std::move(_map));
       }
 
     timings.add_timing(key_root + pdf_timings::KEY_CMAP_PARSE_TOTAL, total_timer.get_time());
@@ -261,6 +295,244 @@ namespace pdflib
     return result;
   }
 
+  void cmap_parser::remove_trailing_nulls(std::string& str)
+  {
+    /* Legacy */
+    // str.erase(std::remove_if(str.begin(), str.end(), [] (char x) { return x==0; }), str.end());
+
+    // Remove only trailing null bytes (not all nulls)
+    while(not str.empty() && str.back() == '\0')
+      {
+        str.pop_back();
+      }
+    // If string became empty, it was all nulls - preserve as single null
+    if(str.empty())
+      {
+        str = std::string(1, '\0');
+      }
+  }
+
+  // Legacy: static version with caching
+  //void cmap_parser::populate_range_mapping(uint32_t begin, uint32_t end,
+  //                                         std::vector<uint32_t>& tgts,
+  //                                         const std::pair<uint32_t, uint32_t>& csr_range,
+  //                                         std::unordered_map<uint32_t, std::string>& map,
+  //                                         bool cache)
+
+  void cmap_parser::populate_range_mapping(uint32_t begin, uint32_t end,
+                                           std::vector<uint32_t>& tgts)
+  {
+    if(begin==0 and
+       end==65535 and
+       csr_range.first==0 and
+       csr_range.second==65535 and
+       tgts.size()==1 and tgts.at(0)==0)
+      {
+        // Identity mapping detected: cmap_value will compute UTF-8 on the fly
+        LOG_S(INFO) << "identity mapping detected, using cmap_value identity mode";
+        _cmap = cmap_value(true, csr_range, {});
+        return;
+      }
+
+    // Non-identity: populate _map entry by entry
+    bool is_identity = (tgts.size() == 1 && tgts[0] == begin);
+
+    LOG_S(INFO) << "populate_range_mapping: begin=" << begin << ", end=" << end
+                << ", tgts.size()=" << tgts.size()
+                << ", is_identity=" << is_identity;
+
+    for(uint32_t i = 0; i < end - begin + 1; i++)
+      {
+        uint32_t src_codepoint = begin + i;
+
+        if(not (csr_range.first <= src_codepoint and src_codepoint <= csr_range.second))
+          {
+            if(is_identity)
+              {
+                LOG_S(WARNING) << "index " << src_codepoint << " is out of bounds ["
+                               << csr_range.first << ", " << csr_range.second << "]";
+              }
+            else
+              {
+                LOG_S(ERROR) << "index " << src_codepoint << " is out of bounds ["
+                             << csr_range.first << ", " << csr_range.second << "]";
+              }
+
+            if(not is_identity)
+              {
+                tgts.back() += 1;
+              }
+            continue;
+          }
+
+        try
+          {
+            std::string tmp(128, 0);
+            {
+              auto itr = tmp.begin();
+              if(is_identity)
+                {
+                  itr = utf8::append(src_codepoint, itr);
+                }
+              else
+                {
+                  for(auto tgt_uint : tgts)
+                    {
+                      itr = utf8::append(tgt_uint, itr);
+                    }
+                }
+              tmp.erase(itr, tmp.end());
+            }
+
+            if(_map.count(src_codepoint) == 1)
+              {
+                LOG_S(WARNING) << "overwriting number c=" << src_codepoint;
+              }
+
+            if(utf8::is_valid(tmp.begin(), tmp.end()))
+              {
+                _map[src_codepoint] = tmp;
+              }
+            else
+              {
+                LOG_S(WARNING) << "invalid utf8 string -> iteration: " << src_codepoint;
+                _map[src_codepoint] = "UNICODE<" + std::to_string(src_codepoint) + ">";
+              }
+          }
+        catch(const std::exception& exc)
+          {
+            LOG_S(WARNING) << "invalid utf8 string: " << exc.what() << " -> iteration: " << src_codepoint;
+            _map[src_codepoint] = "UNICODE<" + std::to_string(src_codepoint) + ">";
+          }
+
+        if(not is_identity)
+          {
+            tgts.back() += 1;
+          }
+      }
+  }
+
+  // FIXME: not used code, just reference still ...
+  void cmap_parser::populate_range_mapping_legacy(uint32_t begin, uint32_t end,
+                                                  const std::string& mapping,
+                                                  std::vector<uint32_t>& tgts,
+                                                  const std::pair<uint32_t, uint32_t>& csr_range,
+                                                  std::unordered_map<uint32_t, std::string>& map)
+  {
+    // Legacy implementation using mapping=="" check (likely dead code path)
+    // Kept for comparison with populate_range_mapping which uses identity detection
+
+    if(mapping == "")
+      {
+        for(uint32_t i = 0; i < end - begin + 1; i++)
+          {
+            if(csr_range.first <= begin + i and begin + i <= csr_range.second)
+              {
+                try
+                  {
+                    std::string tmp(128, 0);
+                    {
+                      auto itr = tmp.begin();
+                      itr = utf8::append(begin + i, itr);
+
+                      tmp.erase(itr, tmp.end());
+                    }
+
+                    if(map.count(begin + i) == 1)
+                      {
+                        LOG_S(WARNING) << "overwriting number c=" << begin + i;
+                      }
+
+                    if(utf8::is_valid(tmp.begin(), tmp.end()))
+                      {
+                        //LOG_S(INFO) << "cmap-ind:" << (begin+i) << " -> target: " << tmp;
+                        map[begin + i] = tmp;
+                      }
+                    else
+                      {
+                        LOG_S(WARNING) << "invalid utf8 string -> iteration: " << (begin + i);
+                        map[begin + i] = "UNICODE<" + std::to_string(begin + i) + ">";
+                      }
+                  }
+                catch(const std::exception& exc)
+                  {
+                    LOG_S(WARNING) << "invalid utf8 string: " << exc.what() << " -> iteration: " << (begin + i);
+
+                    map[begin + i] = "UNICODE<" + std::to_string(begin + i) + ">";
+                  }
+              }
+            else
+              {
+                LOG_S(WARNING) << "index " << begin + i << " is out of bounds ["
+                               << csr_range.first << ", " << csr_range.second << "]";
+              }
+          }
+      }
+    else
+      {
+        LOG_S(ERROR) << begin << ", "
+                     << end << ", "
+                     << csr_range.first << ", "
+                     << csr_range.second << ", "
+                     << tgts.at(0) << ", " << tgts.size();
+
+        for(uint32_t i = 0; i < end - begin + 1; i++)
+          {
+            if(csr_range.first <= begin + i and begin + i <= csr_range.second)
+              {
+                try
+                  {
+                    std::string tmp(128, 0);
+                    {
+                      auto itr = tmp.begin();
+                      for(auto tgt_uint : tgts)
+                        {
+                          itr = utf8::append(tgt_uint, itr);
+                        }
+                      tmp.erase(itr, tmp.end());
+                    }
+
+                    if(map.count(begin + i) == 1)
+                      {
+                        LOG_S(WARNING) << "overwriting number c=" << begin + i;
+                      }
+
+                    //map[begin + i] = tmp;
+                    if(utf8::is_valid(tmp.begin(), tmp.end()))
+                      {
+                        // LOG_S(INFO) << "cmap-ind:" << (begin+i) << " -> target: " << tmp;
+                        map[begin + i] = tmp;
+                      }
+                    else
+                      {
+                        LOG_S(WARNING) << "invalid utf8 string -> iteration: " << (begin + i);
+                        map[begin + i] = "UNICODE<" + std::to_string(begin + i) + ">";
+                      }
+                  }
+                catch(const std::exception& exc)
+                  {
+                    LOG_S(WARNING) << "invalid utf8 string: " << exc.what();
+
+                    map[begin + i] = "UNICODE<" + std::to_string(begin + i) + ">";
+                  }
+              }
+            else
+              {
+                LOG_S(ERROR) << "index " << begin + i << " is out of bounds ["
+                             << csr_range.first << ", " << csr_range.second << "]";
+              }
+
+            tgts.back() += 1;
+          }
+
+        LOG_S(ERROR) << begin << ", "
+                     << end << ", "
+                     << csr_range.first << ", "
+                     << csr_range.second << ", "
+                     << tgts.at(0) << ", " << tgts.size() << "\t => Done!";
+      }
+  }
+
   void cmap_parser::parse_cmap_name(std::vector<qpdf_instruction>& parameters)
   {
     LOG_S(WARNING) << __FUNCTION__ << ": skipping ...";
@@ -296,7 +568,6 @@ namespace pdflib
   void cmap_parser::parse_endcodespacerange(std::vector<qpdf_instruction>& parameters)
   {
     LOG_S(INFO) << __FUNCTION__;
-    //assert(parameters.size()==2*csr_cnt);
 
     const int num_params = 2;
     if(parameters.size()<num_params)
@@ -413,60 +684,34 @@ namespace pdflib
 	    //LOG_S(ERROR) << "source_beg: " << source_start << ", source_end: " << source_end << ": " << target;
 	    
             // FIXME we probably need to fix the 2 in the to_utf8(..)
-            //std::string tmp = target.getUTF8Value();
-            std::string tmp = get_target(target);//to_utf8(target, 2);
-	    LOG_S(INFO) << "source_beg: " << source_start.size() << ", source_end: " << source_end.size()
-			 << " tmp: " << tmp.size()
-			 << " source_start==tmp: " << (source_start==tmp);
+            //std::string tgt = target.getUTF8Value();
+            std::string tgt = get_target(target);//to_utf8(target, 2);
 
-	    /* Legacy */
-            // tmp.erase(std::remove_if(tmp.begin(), tmp.end(), [] (char x) { return x==0;} ), tmp.end()); 
+	    //LOG_S(INFO) << "source_beg: " << source_start.size() << ", source_end: " << source_end.size()
+	    //<< " tgt: " << tgt.size()
+	    //<< " source_start==tgt: " << (source_start==tgt);
 
-            // Remove only trailing null bytes (not all nulls)
-            while(!tmp.empty() && tmp.back() == '\0')
-              {
-                tmp.pop_back();
-              }
-            // If string became empty, it was all nulls - preserve as single null
-            if(tmp.empty())
-              {
-                tmp = std::string(1, '\0');
-              }
+            remove_trailing_nulls(tgt);
 
-	    //LOG_S(ERROR) << "tmp: `" << tmp.size() << "`";
-	    //LOG_S(ERROR) << "source_beg: " << source_start << ", source_end: " << source_end << ": " << tmp;
+	    //LOG_S(INFO) << "source_beg: " << source_start.size() << ", source_end: " << source_end.size()
+	    //<< " tgt: " << tgt.size()
+	    //<< " source_start==tgt: " << (source_start==tgt);
 
-	    LOG_S(INFO) << "source_beg: " << source_start.size() << ", source_end: " << source_end.size()
-			<< " tmp: " << tmp.size()
-			<< " source_start==tmp: " << (source_start==tmp);
-
-            set_range(source_start, source_end, tmp);
+            set_range(source_start, source_end, tgt);
           }
         else if(target.isArray())
           {
-            std::vector<QPDFObjectHandle> tmps = target.getArrayAsVector();
+            std::vector<QPDFObjectHandle> tgts = target.getArrayAsVector();
 
             std::vector<std::string> target_strs;
 
-            for(QPDFObjectHandle tmp: tmps)
+            for(QPDFObjectHandle tgt_: tgts)
               {
                 // FIXME we probably need to fix the 2 in the to_utf8(..)
-                //std::string tgt = tmp.getUTF8Value();
-                std::string tgt = get_target(tmp);
+                //std::string tgt = tgt.getUTF8Value();
+                std::string tgt = get_target(tgt_);
 
-		/* Legacy */
-                //tgt.erase(std::remove_if(tgt.begin(), tgt.end(), [] (char x) { return x==0; }), tgt.end());
-
-                // Remove only trailing null bytes (not all nulls)
-                while(!tgt.empty() && tgt.back() == '\0')
-                  {
-                    tgt.pop_back();
-                  }
-                // If string became empty, it was all nulls - preserve as single null
-                if(tgt.empty())
-                  {
-                    tgt = std::string(1, '\0');
-                  }
+                remove_trailing_nulls(tgt);
 
                 target_strs.push_back(tgt);
               }
@@ -516,11 +761,11 @@ namespace pdflib
                               const std::string tgt)
   {
     //LOG_S(INFO) << __FUNCTION__;
-    
+
     auto itr_beg = src_begin.begin();
     uint32_t begin = utf8::next(itr_beg, src_begin.end());
 
-    if(itr_beg!=src_begin.end())
+    if(itr_beg != src_begin.end())
       {
         LOG_S(WARNING) << "itr_beg!=src_begin.end() --> errors might occur in the cmap: "
                        << "'" << src_begin << "' -> " << begin;
@@ -529,7 +774,7 @@ namespace pdflib
     auto itr_end = src_end.begin();
     uint32_t end = utf8::next(itr_end, src_end.end());
 
-    if(itr_end!=src_end.end())
+    if(itr_end != src_end.end())
       {
         LOG_S(WARNING) << "itr_end!=src_end.end() --> errors might occur in the cmap: "
                        << "'" << src_end << "' -> " << end;;
@@ -538,12 +783,13 @@ namespace pdflib
     //LOG_S(INFO) << __FUNCTION__ << "\t"
     //<< "beg: " << begin << ", "
     //<< "end: " << end << "\t tgt: `" << tgt << "` with size: " << tgt.size();
-    
+
+    // Parse target string into codepoints
     std::string mapping(tgt);
     std::vector<uint32_t> tgts;
-    
+
     auto itr_tgt = tgt.begin();
-    while(itr_tgt!=tgt.end())
+    while(itr_tgt != tgt.end())
       {
         uint32_t tmp = utf8::next(itr_tgt, tgt.end());
         tgts.push_back(tmp);
@@ -555,107 +801,12 @@ namespace pdflib
     // Pre-reserve capacity to avoid rehashing during bulk insertions
     _map.reserve(_map.size() + (end - begin + 1));
 
-    if(mapping=="")
-      {
-        for(uint32_t i = 0; i < end - begin + 1; i++)
-          {
-            //assert(csr_range.first<=begin+i and begin+i<=csr_range.second);
+    // New implementation with cmap_value identity detection
+    populate_range_mapping(begin, end, tgts);
 
-            if(csr_range.first<=begin+i and begin+i<=csr_range.second)
-              {
-                try
-                  {
-                    std::string tmp(128, 0);
-                    {
-                      auto itr = tmp.begin();
-                      itr = utf8::append(begin+i, itr);
-
-                      tmp.erase(itr, tmp.end());
-                    }
-
-                    if(_map.count(begin+i)==1)
-                      {
-                        LOG_S(WARNING) << "overwriting number c=" << begin+i;
-                      }
-
-		    if(utf8::is_valid(tmp.begin(), tmp.end()))
-		      {
-			//LOG_S(INFO) << "cmap-ind:" << (begin+i) << " -> target: " << tmp;
-			_map[begin + i] = tmp;
-		      }
-		    else
-		      {
-			LOG_S(WARNING) << "invalid utf8 string -> iteration: " << (begin+i);
-			_map[begin + i] = "UNICODE<"+std::to_string(begin+i)+">";
-		      }
-                  }
-                catch(const std::exception& exc)
-                  {
-                    LOG_S(WARNING) << "invalid utf8 string: " << exc.what() << " -> iteration: " << (begin+i);
-
-                    _map[begin + i] = "UNICODE<"+std::to_string(begin+i)+">";
-                  }
-              }
-            else
-              {
-                LOG_S(WARNING) << "index " << begin+i << " is out of bounds ["
-                               << csr_range.first << ", " << csr_range.second << "]";
-              }
-          }
-      }
-    else
-      {
-        for(uint32_t i = 0; i < end - begin + 1; i++)
-          {
-            //assert(csr_range.first<=begin+i and begin+i<=csr_range.second);
-
-            if(csr_range.first<=begin+i and begin+i<=csr_range.second)
-              {
-                try
-                  {
-                    std::string tmp(128, 0);
-                    {
-                      auto itr = tmp.begin();
-                      for(auto tgt_uint: tgts)
-                        {
-                          itr = utf8::append(tgt_uint, itr);
-                        }
-                      tmp.erase(itr, tmp.end());
-                    }
-
-                    if(_map.count(begin+i)==1)
-                      {
-                        LOG_S(WARNING) << "overwriting number c=" << begin+i;
-                      }
-
-                    //_map[begin + i] = tmp;
-		    if(utf8::is_valid(tmp.begin(), tmp.end()))
-		      {
-			// LOG_S(INFO) << "cmap-ind:" << (begin+i) << " -> target: " << tmp;
-			_map[begin + i] = tmp;
-		      }
-		    else
-		      {
-			LOG_S(WARNING) << "invalid utf8 string -> iteration: " << (begin+i);
-			_map[begin + i] = "UNICODE<"+std::to_string(begin+i)+">";
-		      }		    
-                  }
-                catch(const std::exception& exc)
-                  {
-                    LOG_S(WARNING) << "invalid utf8 string: " << exc.what();
-
-                    _map[begin + i] = "UNICODE<"+std::to_string(begin+i)+">";
-                  }
-              }
-            else
-              {
-		LOG_S(ERROR) << "index " << begin+i << " is out of bounds ["
-			     << csr_range.first << ", " << csr_range.second << "]";
-              }
-
-            tgts.back() += 1;
-          }
-      }
+    // Legacy implementations:
+    //populate_range_mapping(begin, end, tgts, csr_range, _map);
+    //populate_range_mapping_legacy(begin, end, mapping, tgts, csr_range, _map);
   }
 
   void cmap_parser::set_range(const std::string src_begin,
