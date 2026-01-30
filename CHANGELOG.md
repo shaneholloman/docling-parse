@@ -1,3 +1,13 @@
+## [v5.2.0](https://github.com/docling-project/docling-parse/releases/tag/v5.2.0) - 2026-01-30
+
+### Feature
+
+* Add typed serialization ([#201](https://github.com/docling-project/docling-parse/issues/201)) ([`23c7fb8`](https://github.com/docling-project/docling-parse/commit/23c7fb8e8f5841c186f1bd222f2cc3a8121370f9))
+
+### Performance
+
+* Move map to unordered_map ([#202](https://github.com/docling-project/docling-parse/issues/202)) ([`f86ff92`](https://github.com/docling-project/docling-parse/commit/f86ff926c8823b078026eb80165439de4b0414c0))
+
 ## [v5.1.0](https://github.com/docling-project/docling-parse/releases/tag/v5.1.0) - 2026-01-26
 
 ### Feature
