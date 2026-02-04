@@ -220,7 +220,25 @@ namespace pdflib
       image.x0 = img_bbox[0];
       image.y0 = img_bbox[1];
       image.x1 = img_bbox[2];
-      image.y1 = img_bbox[3];      
+      image.y1 = img_bbox[3];
+    }
+
+    // Populate image properties from the XObject
+    {
+      image.xobject_key       = xobj.get_key();
+      image.image_width       = xobj.get_image_width();
+      image.image_height      = xobj.get_image_height();
+      image.bits_per_component = xobj.get_bits_per_component();
+      image.color_space       = xobj.get_color_space();
+      image.intent            = xobj.get_intent();
+      image.filters              = xobj.get_filters();
+      image.raw_stream_data      = xobj.get_raw_stream_data();
+      image.decoded_stream_data  = xobj.get_decoded_stream_data();
+
+      // propagate PDF semantics for JPEG correction
+      image.decode_present = xobj.has_decode_array();
+      image.decode_array   = xobj.get_decode_array();
+      image.image_mask     = xobj.is_image_mask();
     }
 
     page_images.push_back(image);
