@@ -39,6 +39,8 @@
 
 // specifics of parser
 #include <parse/enums.h>
+#include <parse/config.h>
+
 #include <parse/utils.h>
 #include <parse/utils/pdf_timings.h>
 
