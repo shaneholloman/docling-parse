@@ -26,6 +26,9 @@ namespace plib
     // Export images from the last parsed document
     void export_images(std::string out_dir, int target_page=-1);
 
+    // Get timings from the last parsed document
+    std::unordered_map<std::string, double> get_timings() const;
+
   private:
 
     void execute_parse(pdflib::decode_page_config page_config);
@@ -42,7 +45,7 @@ namespace plib
 
     nlohmann::json input_file;
 
-    std::map<std::string, double> timings;
+    std::unordered_map<std::string, double> timings;
 
     // Persisted document decoder (from last parse_file call)
     std::shared_ptr<pdflib::pdf_decoder<pdflib::DOCUMENT>> document_decoder;
@@ -86,6 +89,15 @@ namespace plib
       }
   }
   
+  std::unordered_map<std::string, double> parser::get_timings() const
+  {
+    if(document_decoder)
+      {
+        return document_decoder->get_timings().to_sum_map();
+      }
+    return {};
+  }
+
   void parser::parse(std::string filename, pdflib::decode_page_config page_config)
   {
     if(not parse_input(filename))
