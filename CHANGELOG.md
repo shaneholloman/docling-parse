@@ -1,3 +1,9 @@
+## [v5.3.2](https://github.com/docling-project/docling-parse/releases/tag/v5.3.2) - 2026-02-17
+
+### Fix
+
+* Rotated pages (missing commits) ([#219](https://github.com/docling-project/docling-parse/issues/219)) ([`6d98479`](https://github.com/docling-project/docling-parse/commit/6d984796a9e4c168019404581dbb963a0ce4c2b0))
+
 ## [v5.3.1](https://github.com/docling-project/docling-parse/releases/tag/v5.3.1) - 2026-02-17
 
 ### Fix
