@@ -1,3 +1,10 @@
+## [v5.3.3](https://github.com/docling-project/docling-parse/releases/tag/v5.3.3) - 2026-02-20
+
+### Fix
+
+* Replace fixed-size utf8::append buffers with std::back_inserter to prevent segfaults ([#224](https://github.com/docling-project/docling-parse/issues/224)) ([`237cef6`](https://github.com/docling-project/docling-parse/commit/237cef698a748049ea1c8eb534692085814880be))
+* Bridge PointerHolder<T> to std::shared_ptr<T> for qpdf 10.x + ([#221](https://github.com/docling-project/docling-parse/issues/221)) ([`b0817db`](https://github.com/docling-project/docling-parse/commit/b0817dbac14dee836ba274823c66337c2047b413))
+
 ## [v5.3.2](https://github.com/docling-project/docling-parse/releases/tag/v5.3.2) - 2026-02-17
 
 ### Fix
