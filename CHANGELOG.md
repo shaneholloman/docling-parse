@@ -1,3 +1,10 @@
+## [v5.3.4](https://github.com/docling-project/docling-parse/releases/tag/v5.3.4) - 2026-02-23
+
+### Fix
+
+* Robustify parse of broken pdfs ([#228](https://github.com/docling-project/docling-parse/issues/228)) ([`e0264dd`](https://github.com/docling-project/docling-parse/commit/e0264dd22ddc204096290628ddbe85975aa79cc4))
+* Use only development groups and not extras ([#225](https://github.com/docling-project/docling-parse/issues/225)) ([`3eb7241`](https://github.com/docling-project/docling-parse/commit/3eb724169686c3fc0c7dcb24936ff06913a7966a))
+
 ## [v5.3.3](https://github.com/docling-project/docling-parse/releases/tag/v5.3.3) - 2026-02-20
 
 ### Fix
