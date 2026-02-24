@@ -1,3 +1,13 @@
+## [v5.4.0](https://github.com/docling-project/docling-parse/releases/tag/v5.4.0) - 2026-02-24
+
+### Feature
+
+* Add config option to remove glyph output ([#231](https://github.com/docling-project/docling-parse/issues/231)) ([`9657023`](https://github.com/docling-project/docling-parse/commit/96570232f653b3588d88878b45d167f70d9ed654))
+
+### Fix
+
+* Updated the debug log ([#229](https://github.com/docling-project/docling-parse/issues/229)) ([`36eb392`](https://github.com/docling-project/docling-parse/commit/36eb3928fd57be02819a36fcadd8ce4d705511a5))
+
 ## [v5.3.4](https://github.com/docling-project/docling-parse/releases/tag/v5.3.4) - 2026-02-23
 
 ### Fix
