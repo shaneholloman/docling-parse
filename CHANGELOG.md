@@ -1,3 +1,9 @@
+## [v5.4.2](https://github.com/docling-project/docling-parse/releases/tag/v5.4.2) - 2026-03-03
+
+### Fix
+
+* Ligatures and unicode chars in Differences ([#234](https://github.com/docling-project/docling-parse/issues/234)) ([`856c0fe`](https://github.com/docling-project/docling-parse/commit/856c0fedb988bd90b0f8204b57ec16d8657742eb))
+
 ## [v5.4.1](https://github.com/docling-project/docling-parse/releases/tag/v5.4.1) - 2026-03-03
 
 ### Fix
