@@ -3,6 +3,7 @@
 #ifndef PDF_PAGE_DECODER_H
 #define PDF_PAGE_DECODER_H
 
+#include <optional>
 #include <qpdf/QPDF.hh>
 #include <qpdf/QPDFPageObjectHelper.hh>
 
@@ -17,9 +18,17 @@ namespace pdflib
   public:
 
     pdf_decoder(QPDFObjectHandle page, int page_num);
+
+    // Thread-safe constructor: creates its own QPDF document from the shared buffer
+    pdf_decoder(std::shared_ptr<std::string> buffer,
+		std::optional<std::string> password,
+		int page_num);
+
     ~pdf_decoder();
 
     int get_page_number();
+
+    bool is_thread_safe() const { return thread_safe; }
 
     // Typed accessors for direct pybind11 binding
     page_item<PAGE_CELLS>& get_page_cells() { return page_cells; }
@@ -53,6 +62,8 @@ namespace pdflib
 
   private:
 
+    void update_qpdf_logger();
+    
     void decode_dimensions();
 
     // Resources
@@ -80,6 +91,12 @@ namespace pdflib
     void sanitise_contents(std::string page_boundary);
 
   private:
+
+    bool thread_safe;
+
+    // Owned QPDF document (only used in thread-safe mode)
+    std::shared_ptr<std::string> owned_buffer;
+    std::unique_ptr<QPDF> owned_qpdf_document;
 
     QPDFObjectHandle qpdf_page;
 
@@ -121,12 +138,55 @@ namespace pdflib
   };
 
   pdf_decoder<PAGE>::pdf_decoder(QPDFObjectHandle page, int page_num):
+    thread_safe(false),
+    owned_buffer(nullptr),
+    owned_qpdf_document(nullptr),
     qpdf_page(page),
     page_number(page_num),
     page_grphs(std::make_shared<pdf_resource<PAGE_GRPHS>>()),
     page_fonts(std::make_shared<pdf_resource<PAGE_FONTS>>()),
     page_xobjects(std::make_shared<pdf_resource<PAGE_XOBJECTS>>())
+  {}
+
+  pdf_decoder<PAGE>::pdf_decoder(std::shared_ptr<std::string> buffer,
+				 std::optional<std::string> password,
+				 int page_num):
+    thread_safe(true),
+    owned_buffer(buffer),
+    owned_qpdf_document(std::make_unique<QPDF>()),
+    qpdf_page(),
+    page_number(page_num),
+    page_grphs(std::make_shared<pdf_resource<PAGE_GRPHS>>()),
+    page_fonts(std::make_shared<pdf_resource<PAGE_FONTS>>()),
+    page_xobjects(std::make_shared<pdf_resource<PAGE_XOBJECTS>>())
   {
+    std::string description = "thread-safe page " + std::to_string(page_num);
+
+    update_qpdf_logger();
+
+    if(password.has_value())
+      {
+	owned_qpdf_document->processMemoryFile(description.c_str(),
+					       owned_buffer->c_str(),
+					       owned_buffer->size(),
+					       password.value().c_str());
+      }
+    else
+      {
+	owned_qpdf_document->processMemoryFile(description.c_str(),
+					       owned_buffer->c_str(),
+					       owned_buffer->size());
+      }
+    
+    std::vector<QPDFObjectHandle> pages = owned_qpdf_document->getAllPages();
+
+    if(page_num < 0 || page_num >= static_cast<int>(pages.size()))
+      {
+	LOG_S(ERROR) << "page " << page_num << " is out of bounds (0-" << pages.size()-1 << ")";
+	throw std::out_of_range("page number out of bounds: " + std::to_string(page_num));
+      }
+
+    qpdf_page = pages.at(page_num);
   }
 
   pdf_decoder<PAGE>::~pdf_decoder()
@@ -134,6 +194,26 @@ namespace pdflib
     LOG_S(INFO) << "releasing memory for pdf page decoder";
   }
 
+  void pdf_decoder<PAGE>::update_qpdf_logger()
+  {
+    if(loguru::g_stderr_verbosity==loguru::Verbosity_INFO or
+       loguru::g_stderr_verbosity==loguru::Verbosity_WARNING)
+      {
+	// ignore ...	
+      }
+    else if(loguru::g_stderr_verbosity==loguru::Verbosity_ERROR or
+	    loguru::g_stderr_verbosity==loguru::Verbosity_FATAL)
+      {
+	owned_qpdf_document->setSuppressWarnings(true);
+	//qpdf_document.setMaxWarnings(0); only for later versions ...
+      }
+    else
+      {
+
+      }
+  }
+
+  
   int pdf_decoder<PAGE>::get_page_number()
   {
     return page_number;
@@ -236,6 +316,11 @@ namespace pdflib
 
   void pdf_decoder<PAGE>::decode_page(const decode_page_config& config)
   {
+    if(owned_qpdf_document != nullptr)
+      {
+	owned_qpdf_document->setSuppressWarnings(!config.keep_qpdf_warnings);
+      }
+    
     utils::timer global, local;
 
     if(config.populate_json_objects)
