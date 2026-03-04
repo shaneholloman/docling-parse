@@ -1,3 +1,9 @@
+## [v5.5.0](https://github.com/docling-project/docling-parse/releases/tag/v5.5.0) - 2026-03-04
+
+### Feature
+
+* Add parallelization for parsing ([#216](https://github.com/docling-project/docling-parse/issues/216)) ([`ae66f6d`](https://github.com/docling-project/docling-parse/commit/ae66f6ddf0c78c439bc731587abed08929e6a4f2))
+
 ## [v5.4.2](https://github.com/docling-project/docling-parse/releases/tag/v5.4.2) - 2026-03-03
 
 ### Fix
