@@ -38,14 +38,14 @@ namespace pdflib
                                        std::optional<std::string>& _password,
                                        std::string description = "processing buffer");
 
-    void decode_document(const decode_page_config& config);
+    void decode_document(const decode_config& config);
 
     void decode_document(std::vector<int>& page_numbers,
-                         const decode_page_config& config);
+                         const decode_config& config);
 
     // Decode a single page and return the page decoder directly
     page_decoder_ptr decode_page(int page_number,
-                                 const decode_page_config& config);
+                                 const decode_config& config);
     
     // New: Direct access to page decoders (typed API)
     bool has_page_decoder(int page_number);
@@ -352,7 +352,7 @@ namespace pdflib
     return true;
   }
 
-  void pdf_decoder<DOCUMENT>::decode_document(const decode_page_config& config)
+  void pdf_decoder<DOCUMENT>::decode_document(const decode_config& config)
   {
     LOG_S(INFO) << "start decoding all pages ...";
     utils::timer timer;
@@ -366,7 +366,7 @@ namespace pdflib
   }
 
   void pdf_decoder<DOCUMENT>::decode_document(std::vector<int>& page_numbers,
-                                              const decode_page_config& config)
+                                              const decode_config& config)
   {
     LOG_S(INFO) << "start decoding selected pages:\n" << config.to_string();
     utils::timer timer;
@@ -379,8 +379,35 @@ namespace pdflib
     timings.add_timing(pdf_timings::KEY_DECODE_DOCUMENT, timer.get_time());
   }
 
+  void pdf_decoder<DOCUMENT>::update_timings(pdf_timings& timings_,
+                                             bool set_timer)
+  {
+    if(set_timer)
+      {
+        // Clear existing timings when starting a new batch
+        timings.clear();
+      }
+    // Merge all timings from the page decoder
+    timings.merge(timings_);
+  }
+
+  bool pdf_decoder<DOCUMENT>::has_page_decoder(int page_number)
+  {
+    return page_decoders.count(page_number) > 0;
+  }
+
+  pdf_decoder<DOCUMENT>::page_decoder_ptr pdf_decoder<DOCUMENT>::get_page_decoder(int page_number)
+  {
+    auto itr = page_decoders.find(page_number);
+    if(itr != page_decoders.end())
+      {
+        return itr->second;
+      }
+    return nullptr;
+  }
+
   pdf_decoder<DOCUMENT>::page_decoder_ptr pdf_decoder<DOCUMENT>::decode_page(int page_number,
-                                                                             const decode_page_config& config)
+                                                                             const decode_config& config)
   {
     LOG_S(INFO) << __FUNCTION__ << " for page: " << page_number;
     utils::timer timer;
@@ -464,33 +491,6 @@ namespace pdflib
     return true;
   }
 
-  void pdf_decoder<DOCUMENT>::update_timings(pdf_timings& timings_,
-                                             bool set_timer)
-  {
-    if(set_timer)
-      {
-        // Clear existing timings when starting a new batch
-        timings.clear();
-      }
-    // Merge all timings from the page decoder
-    timings.merge(timings_);
-  }
-
-  bool pdf_decoder<DOCUMENT>::has_page_decoder(int page_number)
-  {
-    return page_decoders.count(page_number) > 0;
-  }
-
-  pdf_decoder<DOCUMENT>::page_decoder_ptr pdf_decoder<DOCUMENT>::get_page_decoder(int page_number)
-  {
-    auto itr = page_decoders.find(page_number);
-    if(itr != page_decoders.end())
-      {
-        return itr->second;
-      }
-    return nullptr;
-  }
-  
 }
 
 #endif
