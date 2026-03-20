@@ -47,8 +47,9 @@ namespace pdflib
 
     pdf_state(const decode_config& config,
               const pdf_state<GRPH>& grph_state_,
-              std::array<double, 9>&    trafo_matrix_,
-              page_item<PAGE_SHAPES>& page_shapes_);
+              std::array<double, 9>& trafo_matrix_,
+              page_item<PAGE_SHAPES>& page_shapes_,
+	      pdf_render_instructions& instructions_);
 
     pdf_state(const pdf_state<SHAPE>& other);
 
@@ -115,27 +116,31 @@ namespace pdflib
     const decode_config& config;
     const pdf_state<GRPH>& grph_state;
 
-    std::array<double, 9>&    trafo_matrix;
+    std::array<double, 9>& trafo_matrix;
 
     page_item<PAGE_SHAPES>& page_shapes;
 
-    page_item<PAGE_SHAPES>  curr_shapes;
-    page_item<PAGE_SHAPES>  clippings;
+    pdf_render_instructions& instructions;
+    
+    page_item<PAGE_SHAPES> curr_shapes;
+    page_item<PAGE_SHAPES> clippings;
 
     clipping_path_mode_type clipping_path_mode;
   };
 
   pdf_state<SHAPE>::pdf_state(const decode_config& config_,
                               const pdf_state<GRPH>& grph_state_,
-                              std::array<double, 9>&    trafo_matrix_,
-                              page_item<PAGE_SHAPES>& page_shapes_):
+                              std::array<double, 9>& trafo_matrix_,
+                              page_item<PAGE_SHAPES>& page_shapes_,
+			      pdf_render_instructions& instructions_):
     config(config_),
     grph_state(grph_state_),
 
     trafo_matrix(trafo_matrix_),
 
     page_shapes(page_shapes_),
-
+    instructions(instructions_),
+    
     curr_shapes(),
     clippings(),
 
@@ -150,7 +155,8 @@ namespace pdflib
 
     trafo_matrix(other.trafo_matrix),
 
-    page_shapes(other.page_shapes)
+    page_shapes(other.page_shapes),
+    instructions(other.instructions)
   {
     *this = other;
   }
@@ -573,7 +579,12 @@ namespace pdflib
 			<< curr_shapes[i].get_rgb_stroking_ops()[1] << ")";
 	    
             page_shapes.push_back(curr_shapes[i]);
-	    
+
+	    {
+	      shape_instruction shpinstr(curr_shapes[i].get_x(),
+					 curr_shapes[i].get_y());
+	      instructions.add_shape_instruction(std::move(shpinstr));
+	    }
           }
         else
           {

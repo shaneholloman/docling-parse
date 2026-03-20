@@ -23,6 +23,8 @@ namespace pdflib
                 std::shared_ptr<pdf_resource<PAGE_GRPHS>>     page_grphs_,
                 std::shared_ptr<pdf_resource<PAGE_XOBJECTS>>  page_xobjects_,
 
+                pdf_render_instructions& instructions,
+
                 pdf_timings& timings);
 
     ~pdf_decoder();
@@ -82,6 +84,8 @@ namespace pdflib
     std::shared_ptr<pdf_resource<PAGE_GRPHS>>     page_grphs;
     std::shared_ptr<pdf_resource<PAGE_XOBJECTS>>  page_xobjects;
 
+    pdf_render_instructions& instructions;
+
     pdf_timings& timings;
 
     std::unordered_set<std::string> unknown_operators;
@@ -104,7 +108,9 @@ namespace pdflib
 
                                    std::shared_ptr<pdf_resource<PAGE_XOBJECTS>>  page_xobjects_,
 
-                                   pdf_timings& timings):
+                                   pdf_render_instructions& instructions_,
+
+				   pdf_timings& timings):
     config(config_),
 
     page_dimension(page_dimension_),
@@ -116,6 +122,8 @@ namespace pdflib
     page_grphs(page_grphs_),
 
     page_xobjects(page_xobjects_),
+
+    instructions(instructions_),
 
     timings(timings),
 
@@ -174,11 +182,12 @@ namespace pdflib
         //stack.clear();
 
         pdf_state<GLOBAL> state(config,
-                                page_cells,
-                                page_shapes,
-                                page_images,
-                                page_fonts,
-                                page_grphs);
+				page_cells,
+				page_shapes,
+				page_images,
+				page_fonts,
+				page_grphs,
+				instructions);
 
         stack.push_back(state);
       }
@@ -195,11 +204,13 @@ namespace pdflib
     if(stack.size()>0 and page_fonts->keys()!=current_global_state().page_fonts->keys())
       {
         pdf_state<GLOBAL> state(config,
-                                page_cells,
-                                page_shapes,
-                                page_images,
-                                page_fonts,
-                                page_grphs);
+				page_cells,
+				page_shapes,
+				page_images,
+				page_fonts,
+				page_grphs,
+				instructions);
+	
         state = stack.back();
 
         stack.push_back(state);
@@ -229,36 +240,12 @@ namespace pdflib
   {
     LOG_S(INFO) << __FUNCTION__;
 
-    //assert(page_fonts.keys()==current_global_state().page_fonts.keys());
-
     for(int l=0; l<stream.size(); l++)
       {
         qpdf_stream_instruction& inst = stream[l];
 
         if(inst.key=="operator")
           {
-            // pdf_operator::operator_name  name = pdf_operator::to_name(inst.val);
-            // pdf_operator::operator_class clss = pdf_operator::to_class(name);
-
-            /*
-              if(//clss==pdf_operator::PATH_CONSTRUCTION      or
-              //clss==pdf_operator::PATH_PAINTING          or
-              clss==pdf_operator::GENERAL_GRAPHICS_STATE or
-              clss==pdf_operator::COLOR_SCHEME            )
-              {
-              parameters.clear();
-              continue;
-              }
-            */
-
-            /*
-              for(auto p:parameters)
-              {
-              LOG_S(INFO) << "\t" << std::setw(12) << p.key << " | " << p.val;
-              }
-              LOG_S(INFO) << " --> " << std::setw(12) << inst.key << " | " << inst.val;
-            */
-
             for(auto itr=parameters.begin(); itr!=parameters.end(); )
               {
                 if(itr->key=="null" and itr->val=="null") // this can happen if you have an empty array/dict
@@ -330,11 +317,13 @@ namespace pdflib
     if(stack.size()==0)
       {
         pdf_state<GLOBAL> state(config,
-                                page_cells,
-                                page_shapes,
-                                page_images,
-                                page_fonts,
-                                page_grphs);
+				page_cells,
+				page_shapes,
+				page_images,
+				page_fonts,
+				page_grphs,
+				instructions);
+
         stack.push_back(state);
       }
     else
@@ -432,6 +421,8 @@ namespace pdflib
                                        page_fonts_,
                                        page_grphs_,
                                        page_xobjects_,
+
+                                       instructions,
 
                                        timings);
 	

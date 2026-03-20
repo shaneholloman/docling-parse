@@ -23,6 +23,8 @@ namespace plib
 
     bool initialise(nlohmann::json& data);
 
+    pdflib::pdf_render_instructions& get_instructions() { return instructions; }
+
     // Export images from the last parsed document
     void export_images(std::string out_dir, int target_page=-1);
 
@@ -50,6 +52,8 @@ namespace plib
     nlohmann::json input_file;
 
     std::unordered_map<std::string, double> timings;
+
+    pdflib::pdf_render_instructions instructions;
 
     // Persisted document decoder (from last parse_file call)
     std::shared_ptr<pdflib::pdf_decoder<pdflib::DOCUMENT>> document_decoder;

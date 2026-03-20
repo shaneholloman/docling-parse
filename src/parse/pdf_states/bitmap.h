@@ -14,7 +14,8 @@ namespace pdflib
     pdf_state(const decode_config& config_,
               const pdf_state<GRPH>& grph_state_,
               std::array<double, 9>&    trafo_matrix_,
-              page_item<PAGE_IMAGES>& page_images_);
+              page_item<PAGE_IMAGES>& page_images_,
+              pdf_render_instructions&  instructions_);
 
     pdf_state(const pdf_state<BITMAP>& other);
 
@@ -32,23 +33,28 @@ namespace pdflib
     std::array<double, 9>& trafo_matrix;
 
     page_item<PAGE_IMAGES>& page_images;
+
+    pdf_render_instructions&  instructions;
   };
 
   pdf_state<BITMAP>::pdf_state(const decode_config& config_,
                                const pdf_state<GRPH>& grph_state_,
-                               std::array<double, 9>&    trafo_matrix_,
-                               page_item<PAGE_IMAGES>& page_images_):
+                               std::array<double, 9>& trafo_matrix_,
+                               page_item<PAGE_IMAGES>& page_images_,
+                               pdf_render_instructions& instructions_):
     config(config_),
     grph_state(grph_state_),
     trafo_matrix(trafo_matrix_),
-    page_images(page_images_)
+    page_images(page_images_),
+    instructions(instructions_)
   {}
 
   pdf_state<BITMAP>::pdf_state(const pdf_state<BITMAP>& other):
     config(other.config),
     grph_state(other.grph_state),
     trafo_matrix(other.trafo_matrix),
-    page_images(other.page_images)
+    page_images(other.page_images),
+    instructions(other.instructions)
   {}
 
   pdf_state<BITMAP>::~pdf_state()
@@ -106,6 +112,18 @@ namespace pdflib
       image.y0 = img_bbox[1];
       image.x1 = img_bbox[2];
       image.y1 = img_bbox[3];
+
+      {
+        bitmap_instruction binstr(xobj.get_key(),
+				  nullptr,
+                                  {{0, 0, 0}},
+                                  d_0[0], d_0[1],
+                                  d_1[0], d_1[1],
+                                  d_2[0], d_2[1],
+                                  d_3[0], d_3[1]);
+
+        instructions.add_bitmap_instruction(std::move(binstr));
+      }
     }
 
     // Populate image properties from the XObject

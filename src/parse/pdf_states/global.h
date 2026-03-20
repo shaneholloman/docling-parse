@@ -16,8 +16,10 @@ namespace pdflib
               page_item<PAGE_SHAPES>& page_shapes_,
               page_item<PAGE_IMAGES>& page_images_,
 
-              std::shared_ptr<pdf_resource<PAGE_FONTS>> page_fonts_,
-              std::shared_ptr<pdf_resource<PAGE_GRPHS>> page_grphs_);
+	      std::shared_ptr<pdf_resource<PAGE_FONTS>> page_fonts_,
+              std::shared_ptr<pdf_resource<PAGE_GRPHS>> page_grphs_,
+
+              pdf_render_instructions& instructions_);
 
     pdf_state(const pdf_state<GLOBAL>& other);
 
@@ -44,6 +46,8 @@ namespace pdflib
     std::shared_ptr<pdf_resource<PAGE_FONTS>> page_fonts;
     std::shared_ptr<pdf_resource<PAGE_GRPHS>> page_grphs;
 
+    pdf_render_instructions& instructions;
+
     std::array<double, 9> trafo_matrix;
 
     pdf_state<GRPH> grph_state; // this needs to be first
@@ -58,8 +62,12 @@ namespace pdflib
                                page_item<PAGE_SHAPES>& page_shapes_,
                                page_item<PAGE_IMAGES>& page_images_,
 
-                               std::shared_ptr<pdf_resource<PAGE_FONTS>> page_fonts_,
-                               std::shared_ptr<pdf_resource<PAGE_GRPHS>> page_grphs_):
+			       std::shared_ptr<pdf_resource<PAGE_FONTS>> page_fonts_,
+			       std::shared_ptr<pdf_resource<PAGE_GRPHS>> page_grphs_,
+
+                               pdf_render_instructions& instructions_):
+
+
     config(config_),
 
     page_cells(page_cells_),
@@ -69,14 +77,16 @@ namespace pdflib
     page_fonts(page_fonts_),
     page_grphs(page_grphs_),
 
+    instructions(instructions_),
+
     trafo_matrix({1.0, 0.0, 0.0,
         0.0, 1.0, 0.0,
         0.0, 0.0, 1.0}),
 
     grph_state(trafo_matrix, page_grphs),
-    text_state(config, grph_state, trafo_matrix, page_cells, page_fonts),
-    shape_state(config, grph_state, trafo_matrix, page_shapes),
-    bitmap_state(config, grph_state, trafo_matrix, page_images)
+    text_state(config, grph_state, trafo_matrix, page_cells, page_fonts, instructions),
+    shape_state(config, grph_state, trafo_matrix, page_shapes, instructions),
+    bitmap_state(config, grph_state, trafo_matrix, page_images, instructions)
   {
     //LOG_S(INFO) << "pdf_state<GLOBAL>";
   }
@@ -91,14 +101,17 @@ namespace pdflib
     page_fonts(other.page_fonts),
     page_grphs(other.page_grphs),
 
+    instructions(other.instructions),
+
     trafo_matrix(other.trafo_matrix),
 
     grph_state(trafo_matrix, page_grphs),
-    text_state(config, grph_state, trafo_matrix, page_cells, page_fonts),
-    shape_state(config, grph_state, trafo_matrix, page_shapes),
-    bitmap_state(config, grph_state, trafo_matrix, page_images)
+    text_state(config, grph_state, trafo_matrix, page_cells, page_fonts, instructions),
+    shape_state(config, grph_state, trafo_matrix, page_shapes, instructions),
+    bitmap_state(config, grph_state, trafo_matrix, page_images, instructions)
   {
     //LOG_S(INFO) << "pdf_state<GLOBAL>(const pdf_state<GLOBAL>& other)";
+
     shape_state = other.shape_state;
     grph_state = other.grph_state;
     text_state = other.text_state;
