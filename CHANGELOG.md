@@ -1,3 +1,14 @@
+## [v5.6.0](https://github.com/docling-project/docling-parse/releases/tag/v5.6.0) - 2026-03-20
+
+### Feature
+
+* Adding rudimentary renderer ([#206](https://github.com/docling-project/docling-parse/issues/206)) ([`70be865`](https://github.com/docling-project/docling-parse/commit/70be865db8baa2a993daa68282238240a1819564))
+* Make everything by default thread-safe ([#235](https://github.com/docling-project/docling-parse/issues/235)) ([`e64d753`](https://github.com/docling-project/docling-parse/commit/e64d753c5164a464a7f71e875b05ed31a1401291))
+
+### Performance
+
+* Optimize stream decoding with regexp fast path ([#242](https://github.com/docling-project/docling-parse/issues/242)) ([`e54775c`](https://github.com/docling-project/docling-parse/commit/e54775c80edf12546c7086b9045716ac8e34f2d8))
+
 ## [v5.5.0](https://github.com/docling-project/docling-parse/releases/tag/v5.5.0) - 2026-03-04
 
 ### Feature
