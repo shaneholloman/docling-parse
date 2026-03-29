@@ -1,3 +1,9 @@
+## [v5.6.2](https://github.com/docling-project/docling-parse/releases/tag/v5.6.2) - 2026-03-29
+
+### Fix
+
+* Prevent infinite loop in TOC extraction with circular PDF refererences ([#246](https://github.com/docling-project/docling-parse/issues/246)) ([`092d1b8`](https://github.com/docling-project/docling-parse/commit/092d1b8aa289db8d0ab18db529578a4cbd5e6dc8))
+
 ## [v5.6.1](https://github.com/docling-project/docling-parse/releases/tag/v5.6.1) - 2026-03-24
 
 ### Fix
