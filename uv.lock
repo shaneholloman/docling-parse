@@ -795,7 +795,7 @@ wheels = [
 
 [[package]]
 name = "docling-parse"
-version = "5.6.2"
+version = "5.7.0"
 source = { editable = "." }
 dependencies = [
     { name = "docling-core" },

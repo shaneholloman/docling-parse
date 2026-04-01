@@ -1,3 +1,9 @@
+## [v5.7.0](https://github.com/docling-project/docling-parse/releases/tag/v5.7.0) - 2026-04-01
+
+### Feature
+
+* Extend the renderer ([#245](https://github.com/docling-project/docling-parse/issues/245)) ([`e7ef57f`](https://github.com/docling-project/docling-parse/commit/e7ef57fbf60ceefffe6b93b3eac9986870ea134b))
+
 ## [v5.6.2](https://github.com/docling-project/docling-parse/releases/tag/v5.6.2) - 2026-03-29
 
 ### Fix
