@@ -52,6 +52,12 @@ namespace pdflib
     double x1;
     double y1;
 
+    // Quad corners in page coordinates (not exported)
+    double r_x0, r_y0;
+    double r_x1, r_y1;
+    double r_x2, r_y2;
+    double r_x3, r_y3;
+
     // Image properties (from the XObject)
     std::string              xobject_key;
     int                      image_width;
@@ -67,6 +73,12 @@ namespace pdflib
     bool decode_present = false;
     std::vector<double> decode_array; // 2*ncomp when present
     bool image_mask = false;
+    int  icc_components = 0; // number of color components from /ICCBased /N entry; 0 if not ICCBased
+
+    // /Indexed color space support
+    int              indexed_hival  = -1;
+    std::string      indexed_base_cs;
+    std::shared_ptr<std::vector<uint8_t>> indexed_palette;
 
     // graphics state properties
     bool               has_graphics_state = false;
@@ -76,6 +88,10 @@ namespace pdflib
 
   page_item<PAGE_IMAGE>::page_item():
     x0(0), y0(0), x1(0), y1(0),
+    r_x0(0), r_y0(0),
+    r_x1(0), r_y1(0),
+    r_x2(0), r_y2(0),
+    r_x3(0), r_y3(0),
     xobject_key(),
     image_width(0),
     image_height(0),
@@ -309,10 +325,28 @@ namespace pdflib
 
   std::string page_item<PAGE_IMAGE>::get_pil_mode() const
   {
-    if(image_mask) { return "1"; }
-    if(color_space == "/DeviceGray") { return "L"; }
-    if(color_space == "/DeviceRGB")  { return "RGB"; }
-    if(color_space == "/DeviceCMYK") { return "CMYK"; }
+    if(image_mask)
+      {
+        return "1";
+      }
+    if(color_space == "/DeviceGray")
+      {
+        return "L";
+      }
+    if(color_space == "/DeviceRGB")
+      {
+        return "RGB";
+      }
+    if(color_space == "/DeviceCMYK")
+      {
+        return "CMYK";
+      }
+    if(color_space.find("/ICCBased") != std::string::npos and icc_components > 0)
+      {
+        if(icc_components == 1) { return "L"; }
+        if(icc_components == 3) { return "RGB"; }
+        if(icc_components == 4) { return "CMYK"; }
+      }
 
     LOG_S(WARNING) << "unknown color_space '" << color_space
                    << "' for xobject_key=" << xobject_key

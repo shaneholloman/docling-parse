@@ -14,6 +14,7 @@ namespace pdflib
   public:
 
     renderer();
+    explicit renderer(render_config config);
 
     void set_size(size_instruction& instr);
 
@@ -25,11 +26,18 @@ namespace pdflib
 
   private:
 
+    render_config config_;
     std::shared_ptr<std::vector<uint8_t> > canvas;
     std::array<int, 3> shape;
   };
 
-  inline renderer<NAIVE>::renderer():
+  renderer<NAIVE>::renderer():
+    canvas(std::make_shared<std::vector<uint8_t> >()),
+    shape({0, 0, 3})
+  {}
+
+  inline renderer<NAIVE>::renderer(render_config config):
+    config_(config),
     canvas(std::make_shared<std::vector<uint8_t> >()),
     shape({0, 0, 3})
   {}
@@ -61,12 +69,12 @@ namespace pdflib
   inline void renderer<NAIVE>::render_bitmap(bitmap_instruction& instr)
   {
     LOG_S(INFO) << __FUNCTION__
-		<< "  key='" << instr.get_key() << "'"
+                << "  key='" << instr.get_key() << "'"
                 << "  rect=[("
                 << instr.get_r_x0() << ", " << instr.get_r_y0() << "), ("
                 << instr.get_r_x1() << ", " << instr.get_r_y1() << "), ("
                 << instr.get_r_x2() << ", " << instr.get_r_y2() << "), ("
-                << instr.get_r_x3() << ", " << instr.get_r_y3() << ")]";    
+                << instr.get_r_x3() << ", " << instr.get_r_y3() << ")]";
   }
 
   inline void renderer<NAIVE>::render_shape(shape_instruction& instr)
