@@ -1,3 +1,13 @@
+## [v5.8.0](https://github.com/docling-project/docling-parse/releases/tag/v5.8.0) - 2026-04-08
+
+### Feature
+
+* Improve extraction from fillable fields ([#247](https://github.com/docling-project/docling-parse/issues/247)) ([`c3c1e85`](https://github.com/docling-project/docling-parse/commit/c3c1e85da3f90f69e03784e611864a67fc804d7e))
+
+### Fix
+
+* Boolean conversion ([#248](https://github.com/docling-project/docling-parse/issues/248)) ([`9ea4099`](https://github.com/docling-project/docling-parse/commit/9ea4099e825215642af72d67d470aed5b8698145))
+
 ## [v5.7.0](https://github.com/docling-project/docling-parse/releases/tag/v5.7.0) - 2026-04-01
 
 ### Feature
