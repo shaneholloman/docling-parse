@@ -1,3 +1,9 @@
+## [v5.9.0](https://github.com/docling-project/docling-parse/releases/tag/v5.9.0) - 2026-04-15
+
+### Feature
+
+* Adding the cpp analysis script and enhancing the extraction of bitmap types (fix for rotated images). ([#250](https://github.com/docling-project/docling-parse/issues/250)) ([`70fa300`](https://github.com/docling-project/docling-parse/commit/70fa30054ebafa1f0de160c8495701dc485eefca))
+
 ## [v5.8.0](https://github.com/docling-project/docling-parse/releases/tag/v5.8.0) - 2026-04-08
 
 ### Feature
