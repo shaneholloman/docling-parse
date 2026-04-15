@@ -3,6 +3,8 @@
 #ifndef PDF_BITMAP_STATE_H
 #define PDF_BITMAP_STATE_H
 
+#include <parse/utils/ccitt/ccitt_utils.h>
+
 namespace pdflib
 {
 
@@ -138,7 +140,12 @@ namespace pdflib
       image.decode_present  = xobj.has_decode_array();
       image.decode_array    = xobj.get_decode_array();
       image.image_mask      = xobj.is_image_mask();
+
+      // propagate /CCITTFaxDecode parameters
+      image.ccitt_k          = xobj.get_ccitt_k();
+      image.ccitt_black_is_1 = xobj.get_ccitt_black_is_1();
       image.icc_components  = xobj.get_icc_components();
+      image.jbig2_globals_data = xobj.get_jbig2_globals_data();
 
       // propagate /Indexed color space data
       image.indexed_hival   = xobj.get_indexed_hival();
@@ -163,7 +170,11 @@ namespace pdflib
     pixel_format fmt = PIXEL_FORMAT_UNKNOWN;
 
     int channels = 0;
-    if(image.color_space == "/DeviceGray")
+    if(image.image_mask)
+      {
+        fmt = PIXEL_FORMAT_GRAY; channels = 1;
+      }
+    else if(image.color_space == "/DeviceGray")
       {
         fmt = PIXEL_FORMAT_GRAY; channels = 1;
       }
@@ -297,6 +308,8 @@ namespace pdflib
 
         const bool has_dct = std::find(image.filters.begin(), image.filters.end(),
                                        "/DCTDecode") != image.filters.end();
+        const bool has_flate = std::find(image.filters.begin(), image.filters.end(),
+                                         "/FlateDecode") != image.filters.end();
 
         if (image.decoded_stream_data and image.decoded_stream_data->getSize() > 0)
           {
@@ -324,7 +337,11 @@ namespace pdflib
                         << "decoding JPEG via libjpeg "
                         << "for xobject_key=" << image.xobject_key;
 
-            jpeg::ColorSpace cs = jpeg::icc_n_to_color_space(channels);
+            jpeg::ColorSpace cs = jpeg::to_color_space(image.color_space);
+            if (cs == jpeg::ColorSpace::Unknown and image.icc_components > 0)
+              {
+                cs = jpeg::icc_n_to_color_space(image.icc_components);
+              }
 
             jpeg::jpeg_parameters params;
             params.color_space = cs;
@@ -333,21 +350,115 @@ namespace pdflib
             params.decode      = image.decode_array;
             params.has_decode  = image.decode_present and not image.decode_array.empty();
 
-            auto decoded = jpeg::decode_jpeg_to_raw_pixels(
+            LOG_S(INFO) << "bitmap: JPEG fallback parameters"
+                        << " xobject_key=" << image.xobject_key
+                        << " declared_cs=" << image.color_space
+                        << " icc_components=" << image.icc_components
+                        << " requested_cs=" << jpeg::color_space_name(cs)
+                        << " size=" << params.width << "x" << params.height
+                        << " decode_len=" << params.decode.size();
+
+            auto decoded = jpeg::decode_pdf_jpeg_stream_to_raw_pixels(
                 reinterpret_cast<unsigned char const*>(image.raw_stream_data->getBuffer()),
                 static_cast<std::size_t>(image.raw_stream_data->getSize()),
+                has_flate,
                 params);
 
             if (not decoded.empty())
               {
-                const int w = image.image_width;
-                const int h = image.image_height;
+                const int w = decoded.width  > 0 ? decoded.width  : image.image_width;
+                const int h = decoded.height > 0 ? decoded.height : image.image_height;
+                const int decoded_channels = decoded.components;
+                pixel_data  = std::make_shared<std::vector<uint8_t>>(std::move(decoded.pixels));
+                pixel_shape = {h, w, decoded_channels};
+                channels    = decoded_channels;
+
+                if(decoded_channels == 1)
+                  {
+                    fmt = PIXEL_FORMAT_GRAY;
+                  }
+                else if(decoded_channels == 3)
+                  {
+                    fmt = PIXEL_FORMAT_RGB;
+                  }
+                else if(decoded_channels == 4)
+                  {
+                    fmt = PIXEL_FORMAT_CMYK;
+                  }
+                else
+                  {
+                    fmt = PIXEL_FORMAT_UNKNOWN;
+                  }
+
+                LOG_S(INFO) << "bitmap: libjpeg decode succeeded "
+                            << "for xobject_key=" << image.xobject_key
+                            << " actual_cs=" << jpeg::color_space_name(decoded.color_space)
+                            << " actual_shape=" << h << "x" << w << "x" << decoded_channels;
+              }
+            else
+              {
+                LOG_S(WARNING) << "bitmap: libjpeg decode failed "
+                               << "for xobject_key=" << image.xobject_key;
+              }
+          }
+        else if (std::find(image.filters.begin(), image.filters.end(),
+                           "/JBIG2Decode") != image.filters.end()
+                 and image.raw_stream_data
+                 and image.raw_stream_data->getSize() > 0)
+          {
+            LOG_S(WARNING) << "bitmap: /JBIG2Decode image has no decoded pixel data yet"
+                           << " for xobject_key=" << image.xobject_key
+                           << " raw_size=" << image.raw_stream_data->getSize()
+                           << " has_globals="
+                           << ((image.jbig2_globals_data and image.jbig2_globals_data->getSize() > 0) ? "true" : "false")
+                           << " width=" << image.image_width
+                           << " height=" << image.image_height
+                           << " bpc=" << image.bits_per_component
+                           << " image_mask=" << (image.image_mask ? "true" : "false");
+          }
+        else if (std::find(image.filters.begin(), image.filters.end(),
+                           "/CCITTFaxDecode") != image.filters.end()
+                 and image.raw_stream_data
+                 and image.raw_stream_data->getSize() > 0)
+          {
+            LOG_S(INFO) << "bitmap: decoded_stream_data unavailable for /CCITTFaxDecode image, "
+                        << "decoding via built-in CCITT decoder "
+                        << "for xobject_key=" << image.xobject_key;
+
+            const int w = image.image_width;
+            const int h = image.image_height;
+
+            auto decoded = ccitt::decode(
+                reinterpret_cast<const uint8_t*>(image.raw_stream_data->getBuffer()),
+                static_cast<size_t>(image.raw_stream_data->getSize()),
+                w, h,
+                image.ccitt_k,
+                image.ccitt_black_is_1);
+
+            if(not decoded.empty())
+              {
+                // --- TEMPORARY DEBUG: save the raw decoded pixels as a PNG ---
+		bool export_to_png_for_debug = false; // should always be false in production!!
+		if(export_to_png_for_debug)
+		  {
+		    // Strip the leading '/' that PDF keys always carry (e.g. "/Im0" → "Im0").
+		    std::string tmp_name = image.xobject_key;
+		    if(not tmp_name.empty() and tmp_name[0] == '/')
+		      {
+			tmp_name = tmp_name.substr(1);
+		      }
+		    std::string dbg_path = "./tmp/ccitt_debug_" + tmp_name + ".png";
+		    
+		    LOG_S(WARNING) << "saving PNG image at: " << dbg_path;
+		    ccitt::save_debug_png(decoded, w, h, dbg_path);
+		  }
+		
                 pixel_data  = std::make_shared<std::vector<uint8_t>>(std::move(decoded));
                 pixel_shape = {h, w, channels};
               }
             else
               {
-                LOG_S(WARNING) << "bitmap: libjpeg decode failed "
+                LOG_S(WARNING) << "bitmap: CCITT decode failed "
                                << "for xobject_key=" << image.xobject_key;
               }
           }

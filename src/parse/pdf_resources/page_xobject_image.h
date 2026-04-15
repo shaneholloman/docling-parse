@@ -42,6 +42,12 @@ namespace pdflib
     std::vector<double>      get_decode_array() const;
     bool                     is_image_mask() const;
 
+    // /CCITTFaxDecode parameters (from /DecodeParms)
+    int                      get_ccitt_k() const;
+    bool                     get_ccitt_black_is_1() const;
+    bool                     has_jbig2_globals_data() const;
+    std::shared_ptr<Buffer>  get_jbig2_globals_data() const;
+
     bool                     has_raw_stream_data() const;
     std::shared_ptr<Buffer>  get_raw_stream_data() const;
 
@@ -96,6 +102,11 @@ namespace pdflib
     std::vector<double> decode_array; // length 2*ncomp when present
     bool decode_present = false;
     bool image_mask = false;
+
+    // /CCITTFaxDecode parameters from /DecodeParms
+    int  ccitt_k          = -1;    // /K: -1=Group4, 0=Group3-1D, >0=Group3-mixed
+    bool ccitt_black_is_1 = false; // /BlackIs1: true means 1-bit=black
+    std::shared_ptr<Buffer> jbig2_globals_data;
   };
 
   pdf_resource<PAGE_XOBJECT_IMAGE>::pdf_resource():
@@ -106,7 +117,8 @@ namespace pdflib
     intent(),
     image_filters(),
     raw_stream_data(nullptr),
-    decoded_stream_data(nullptr)
+    decoded_stream_data(nullptr),
+    jbig2_globals_data(nullptr)
   {}
 
   pdf_resource<PAGE_XOBJECT_IMAGE>::~pdf_resource()
@@ -245,6 +257,49 @@ namespace pdflib
                     if(base_obj.isName())
                       {
                         indexed_base_cs = base_obj.getName();
+                      }
+                    else if(base_obj.isArray() and base_obj.getArrayNItems() >= 2)
+                      {
+                        auto base_name = base_obj.getArrayItem(0);
+                        if(base_name.isName() and base_name.getName() == "/ICCBased")
+                          {
+                            auto icc_stream = base_obj.getArrayItem(1);
+                            if(icc_stream.isStream())
+                              {
+                                auto icc_dict = icc_stream.getDict();
+                                if(icc_dict.hasKey("/N") and icc_dict.getKey("/N").isInteger())
+                                  {
+                                    const int n = icc_dict.getKey("/N").getIntValue();
+                                    if(n == 1)      { indexed_base_cs = "/DeviceGray"; }
+                                    else if(n == 3) { indexed_base_cs = "/DeviceRGB"; }
+                                    else if(n == 4) { indexed_base_cs = "/DeviceCMYK"; }
+                                    else
+                                      {
+                                        LOG_S(WARNING) << "Indexed ICCBased base has unsupported /N="
+                                                       << n;
+                                      }
+                                    LOG_S(INFO) << "Indexed ICCBased base: N=" << n
+                                                << " -> " << indexed_base_cs;
+                                  }
+                                else
+                                  {
+                                    LOG_S(WARNING) << "Indexed ICCBased base missing /N entry";
+                                  }
+                              }
+                            else
+                              {
+                                LOG_S(WARNING) << "Indexed ICCBased base: second array element is not a stream";
+                              }
+                          }
+                        else if(base_name.isName())
+                          {
+                            indexed_base_cs = base_name.getName();
+                            LOG_S(INFO) << "Indexed array base color space: " << indexed_base_cs;
+                          }
+                      }
+                    else
+                      {
+                        LOG_S(WARNING) << "Indexed color space: unsupported base object type";
                       }
 
                     // hival
@@ -388,6 +443,61 @@ namespace pdflib
 	    LOG_S(WARNING) << "no `/Decode` found and color space not recognized: " << color_space;
 	  }
       }
+    // /DecodeParms — extract CCITT-specific keys (/K, /BlackIs1)
+    if(json_xobject_dict.count("/DecodeParms"))
+      {
+        auto& dp = json_xobject_dict["/DecodeParms"];
+        // DecodeParms can be a dict or an array of dicts (one per filter).
+        // For a single /CCITTFaxDecode we always look in the first (or only) dict.
+        auto* parms_ptr = dp.is_object() ? &dp
+                        : (dp.is_array() and not dp.empty() and dp[0].is_object())
+                            ? &dp[0]
+                            : nullptr;
+        if(parms_ptr)
+          {
+            auto& parms = *parms_ptr;
+            if(parms.count("/K") and parms["/K"].is_number())
+              {
+                ccitt_k = parms["/K"].get<int>();
+              }
+            if(parms.count("/BlackIs1") and parms["/BlackIs1"].is_boolean())
+              {
+                ccitt_black_is_1 = parms["/BlackIs1"].get<bool>();
+              }
+
+            auto qpdf_dp = qpdf_xobject_dict.getKey("/DecodeParms");
+            QPDFObjectHandle qpdf_parms =
+              qpdf_dp.isDictionary() ? qpdf_dp
+              : (qpdf_dp.isArray() and qpdf_dp.getArrayNItems() > 0 and qpdf_dp.getArrayItem(0).isDictionary())
+                  ? qpdf_dp.getArrayItem(0)
+                  : QPDFObjectHandle();
+
+            if(qpdf_parms.isDictionary() and qpdf_parms.hasKey("/JBIG2Globals"))
+              {
+                auto globals_stream = qpdf_parms.getKey("/JBIG2Globals");
+                if(globals_stream.isStream())
+                  {
+                    try
+                      {
+                        jbig2_globals_data = to_shared_ptr(globals_stream.getRawStreamData());
+                        LOG_S(INFO) << "JBIG2Globals size: "
+                                    << (jbig2_globals_data ? jbig2_globals_data->getSize() : 0)
+                                    << " bytes";
+                      }
+                    catch(std::exception const& e)
+                      {
+                        LOG_S(WARNING) << "failed to get JBIG2Globals stream data: " << e.what();
+                        jbig2_globals_data = nullptr;
+                      }
+                  }
+                else
+                  {
+                    LOG_S(WARNING) << "/JBIG2Globals present but is not a stream";
+                  }
+              }
+          }
+      }
+
     LOG_S(INFO) << "image properties: "
                 << image_width << "x" << image_height
                 << " bpc=" << bits_per_component
@@ -526,6 +636,26 @@ namespace pdflib
   bool pdf_resource<PAGE_XOBJECT_IMAGE>::is_image_mask() const
   {
     return image_mask;
+  }
+
+  int pdf_resource<PAGE_XOBJECT_IMAGE>::get_ccitt_k() const
+  {
+    return ccitt_k;
+  }
+
+  bool pdf_resource<PAGE_XOBJECT_IMAGE>::get_ccitt_black_is_1() const
+  {
+    return ccitt_black_is_1;
+  }
+
+  bool pdf_resource<PAGE_XOBJECT_IMAGE>::has_jbig2_globals_data() const
+  {
+    return (jbig2_globals_data != nullptr && jbig2_globals_data->getSize() > 0);
+  }
+
+  std::shared_ptr<Buffer> pdf_resource<PAGE_XOBJECT_IMAGE>::get_jbig2_globals_data() const
+  {
+    return jbig2_globals_data;
   }
 
   bool pdf_resource<PAGE_XOBJECT_IMAGE>::has_raw_stream_data() const
