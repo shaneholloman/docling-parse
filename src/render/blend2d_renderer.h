@@ -198,12 +198,13 @@ namespace pdflib
           }
         return out;
       };
-      auto contains_all = [](const std::vector<std::string>& haystack,
-                             const std::vector<std::string>& needles) -> bool
+      auto vectors_equal = [](const std::vector<std::string>& lhs,
+                              const std::vector<std::string>& rhs) -> bool
       {
-        for (const auto& needle : needles)
+        if (lhs.size() != rhs.size()) { return false; }
+        for (size_t i = 0; i < lhs.size(); ++i)
           {
-            if (std::find(haystack.begin(), haystack.end(), needle) == haystack.end())
+            if (lhs[i] != rhs[i])
               {
                 return false;
               }
@@ -225,9 +226,10 @@ namespace pdflib
       const auto q_sig_toks = significant_tokens(q_toks);
       if (q_sig_toks.empty()) { return {}; }
 
-      // Only accept candidates that preserve the full non-style family/script
-      // signature. This rejects matches like "noto sans jp" ->
-      // "noto sans mongolian".
+      // Only accept candidates with the exact same significant family/script
+      // tokens. This rejects cross-script variants like:
+      //   "noto sans" -> "noto sans mongolian"
+      //   "noto sans jp" -> "noto sans mongolian"
 
       // Minimum Jaccard similarity required to accept a fuzzy match.
       // A raw intersection score of 1 on "regular" alone yields J ≈ 0.14
@@ -243,11 +245,12 @@ namespace pdflib
         {
           const auto c_toks = split_tokens(norm_name);
           const auto c_sig_toks = significant_tokens(c_toks);
-          if (not contains_all(c_sig_toks, q_sig_toks)) { continue; }
+          if (not vectors_equal(c_sig_toks, q_sig_toks)) { continue; }
           int score = 0;
-          for (const auto& qt : q_toks)
+          const auto max_tokens = std::min(q_toks.size(), c_toks.size());
+          for (size_t i = 0; i < max_tokens; ++i)
             {
-              if (std::find(c_toks.begin(), c_toks.end(), qt) != c_toks.end())
+              if (q_toks[i] == c_toks[i])
                 {
                   ++score;
                 }
@@ -918,6 +921,32 @@ namespace pdflib
             LOG_S(INFO) << "render_text: before set_fill_style";
             ctx.set_fill_style(BLRgba32(0xFF000000u)); // opaque black
             LOG_S(INFO) << "render_text: before fill_utf8_text";
+            BLGlyphBuffer gb;
+            gb.set_utf8_text(instr.get_text().c_str());
+            const BLResult shape_res = font.shape(gb);
+            LOG_S(INFO) << "render_text: after shape res=" << shape_res
+                        << " empty=" << gb.is_empty();
+            if (shape_res != BL_SUCCESS || gb.is_empty())
+              {
+                LOG_S(WARNING) << "render_text: shaping failed or produced no glyphs"
+                               << " (BLResult=" << shape_res << ")"
+                               << " text=`" << instr.get_text() << "`"
+                               << " font_name=`" << instr.get_font_name() << "`"
+                               << " base_font=`" << instr.get_base_font() << "`";
+                ctx.restore();
+                draw_bbox_fallback();
+                ctx.end();
+                return;
+              }
+            const auto* placement_data = gb.placement_data();
+            if (placement_data == nullptr)
+              {
+                LOG_S(WARNING) << "render_text: glyph placement data is null, using fallback";
+                ctx.restore();
+                draw_bbox_fallback();
+                ctx.end();
+                return;
+              }
             const BLResult text_res =
               ctx.fill_utf8_text(BLPoint(0.0, 0.0), font, instr.get_text().c_str());
             LOG_S(INFO) << "render_text: after fill_utf8_text res=" << text_res;
@@ -969,7 +998,7 @@ namespace pdflib
 
   inline void renderer<BLEND2D>::render_bitmap(bitmap_instruction& instr)
   {
-    LOG_S(INFO) << __FUNCTION__;
+    LOG_S(INFO) << __FUNCTION__ << " for xobject_key=" << instr.get_key();
 
     if (shape_[0] == 0 or shape_[1] == 0)
       {
@@ -993,10 +1022,14 @@ namespace pdflib
       }
 
     const auto& src_data  = instr.get_data();
+    const auto& alpha_data = instr.get_alpha_data();
     const auto& src_shape = instr.get_shape(); // {height, width, channels}
     const int sh = src_shape[0];
     const int sw = src_shape[1];
     const int sc = src_shape[2];
+    const bool image_mask = instr.is_image_mask();
+    const auto fmt = instr.get_pixel_format();
+    const auto fill_rgb = instr.get_rgb_filling();
 
     BLContext ctx(image_);
     const bool axis_aligned = is_axis_aligned(q);
@@ -1015,7 +1048,9 @@ namespace pdflib
                 << " axis_aligned=" << (axis_aligned ? "true" : "false")
                 << " right_angle=" << (right_angle ? "true" : "false")
                 << " quarter_turns=" << quarter_turns
-                << " src=" << sw << "x" << sh << "x" << sc;
+                << " src=" << sw << "x" << sh << "x" << sc
+                << " fmt=" << static_cast<int>(fmt)
+                << " image_mask=" << (image_mask ? "true" : "false");
 
     if ((not instr.has_data()) or sh <= 0 or sw <= 0 or sc < 1)
       {
@@ -1042,6 +1077,23 @@ namespace pdflib
         return;
       }
 
+    const size_t expected_alpha_bytes = static_cast<size_t>(sh) * sw;
+    const bool use_soft_mask_alpha =
+      instr.has_alpha_data()
+      and not image_mask
+      and alpha_data->size() >= expected_alpha_bytes;
+    LOG_S(INFO) << "render_bitmap: alpha_state"
+                << " has_alpha=" << (instr.has_alpha_data() ? "true" : "false")
+                << " use_soft_mask_alpha=" << (use_soft_mask_alpha ? "true" : "false")
+                << " alpha_bytes=" << (alpha_data ? alpha_data->size() : 0);
+    if(instr.has_alpha_data() and not use_soft_mask_alpha)
+      {
+        LOG_S(WARNING) << __FUNCTION__ << ": alpha buffer too small ("
+                       << alpha_data->size() << " < " << expected_alpha_bytes
+                       << ") for xobject_key=" << instr.get_key()
+                       << ", ignoring SMask";
+      }
+
     // Build a BLImage (PRGB32) from the raw channel data.
     BLImage src_img;
     src_img.create(sw, sh, BL_FORMAT_PRGB32);
@@ -1052,16 +1104,63 @@ namespace pdflib
       auto* base = static_cast<uint8_t*>(img_data.pixel_data);
       const intptr_t stride = img_data.stride;
 
+      if (fmt == PIXEL_FORMAT_CMYK && src_data->size() >= static_cast<size_t>(sc))
+        {
+          const uint8_t c = src_data->at(0);
+          const uint8_t m = (sc >= 2) ? src_data->at(1) : 0;
+          const uint8_t y = (sc >= 3) ? src_data->at(2) : 0;
+          const uint8_t k = (sc >= 4) ? src_data->at(3) : 0;
+          const uint8_t r = static_cast<uint8_t>(((255u - c) * (255u - k)) / 255u);
+          const uint8_t g = static_cast<uint8_t>(((255u - m) * (255u - k)) / 255u);
+          const uint8_t b = static_cast<uint8_t>(((255u - y) * (255u - k)) / 255u);
+          LOG_S(INFO) << "render_bitmap: cmyk_sample[0]"
+                      << " raw=(" << static_cast<int>(c) << ","
+                      << static_cast<int>(m) << ","
+                      << static_cast<int>(y) << ","
+                      << static_cast<int>(k) << ")"
+                      << " rgb=(" << static_cast<int>(r) << ","
+                      << static_cast<int>(g) << ","
+                      << static_cast<int>(b) << ")";
+        }
+
       for (int row = 0; row < sh; ++row)
         {
           auto* row_ptr = reinterpret_cast<uint32_t*>(base + row * stride);
           for (int col = 0; col < sw; ++col)
             {
               const int idx = (row * sw + col) * sc;
-              const uint8_t r = src_data->at(idx);
-              const uint8_t g = (sc >= 2) ? src_data->at(idx + 1) : r;
-              const uint8_t b = (sc >= 3) ? src_data->at(idx + 2) : r;
-              const uint8_t a = (sc >= 4) ? src_data->at(idx + 3) : 0xFFu;
+              uint8_t r = src_data->at(idx);
+              uint8_t g = (sc >= 2) ? src_data->at(idx + 1) : r;
+              uint8_t b = (sc >= 3) ? src_data->at(idx + 2) : r;
+              uint8_t a = 0xFFu;
+
+              if (image_mask)
+                {
+                  a = static_cast<uint8_t>(0xFFu - src_data->at(idx));
+                  r = static_cast<uint8_t>(fill_rgb[0]);
+                  g = static_cast<uint8_t>(fill_rgb[1]);
+                  b = static_cast<uint8_t>(fill_rgb[2]);
+                }
+              else if (fmt == PIXEL_FORMAT_CMYK and sc >= 4)
+                {
+                  const uint8_t c = src_data->at(idx + 0);
+                  const uint8_t m = src_data->at(idx + 1);
+                  const uint8_t y = src_data->at(idx + 2);
+                  const uint8_t k = src_data->at(idx + 3);
+
+                  r = static_cast<uint8_t>((static_cast<unsigned int>(c) * k) / 255u);
+                  g = static_cast<uint8_t>((static_cast<unsigned int>(m) * k) / 255u);
+                  b = static_cast<uint8_t>((static_cast<unsigned int>(y) * k) / 255u);
+                }
+              else if (fmt == PIXEL_FORMAT_GRAY)
+                {
+                  g = r;
+                  b = r;
+                }
+              if (use_soft_mask_alpha and not image_mask)
+                {
+                  a = alpha_data->at(static_cast<size_t>(row) * sw + col);
+                }
 
               // Store as premultiplied ARGB (required by BL_FORMAT_PRGB32).
               const uint32_t pm_r = static_cast<uint32_t>(r) * a / 255u;
@@ -1075,7 +1174,10 @@ namespace pdflib
         }
     }
 
-    if (axis_aligned)
+    const bool can_use_axis_aligned_fast_path =
+      axis_aligned and right_angle and quarter_turns == 0;
+
+    if (can_use_axis_aligned_fast_path)
       {
         LOG_S(INFO) << "render_bitmap: selecting axis-aligned path";
         render_bitmap_axis_aligned(ctx, src_img, q, sw, sh);

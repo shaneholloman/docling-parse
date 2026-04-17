@@ -68,6 +68,7 @@ namespace pdflib
     std::vector<std::string> filters;
     std::shared_ptr<Buffer>  raw_stream_data;
     std::shared_ptr<Buffer>  decoded_stream_data;
+    std::shared_ptr<std::vector<uint8_t>> soft_mask_data;
 
     // PDF image semantics copied from XObject
     bool decode_present = false;
@@ -81,7 +82,7 @@ namespace pdflib
     std::shared_ptr<std::vector<uint8_t>> indexed_palette;
 
     // /CCITTFaxDecode parameters (from /DecodeParms)
-    int  ccitt_k          = -1;    // /K: -1=Group4, 0=Group3-1D, >0=Group3-mixed
+    int  ccitt_k          = 0;     // /K default per PDF spec: 0=Group3-1D, <0=Group4, >0=Group3-mixed
     bool ccitt_black_is_1 = false; // /BlackIs1 flag from DecodeParms
     std::shared_ptr<Buffer> jbig2_globals_data;
 

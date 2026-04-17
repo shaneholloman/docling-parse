@@ -53,6 +53,8 @@ namespace pdflib
 
     bool                     has_decoded_stream_data() const;
     std::shared_ptr<Buffer>  get_decoded_stream_data() const;
+    bool                     has_soft_mask_data() const;
+    std::shared_ptr<std::vector<uint8_t>> get_soft_mask_data() const;
 
     // Determine file extension from filters (e.g. ".jpg", ".jp2", ".jb2", ".bin")
     std::string pick_extension() const;
@@ -72,6 +74,7 @@ namespace pdflib
     void init_filters();
 
     void init_stream_data();
+    void init_soft_mask_data();
 
   private:
 
@@ -97,6 +100,7 @@ namespace pdflib
     // Stream data
     std::shared_ptr<Buffer> raw_stream_data;
     std::shared_ptr<Buffer> decoded_stream_data;
+    std::shared_ptr<std::vector<uint8_t>> soft_mask_data;
 
     // PDF image semantics
     std::vector<double> decode_array; // length 2*ncomp when present
@@ -104,7 +108,7 @@ namespace pdflib
     bool image_mask = false;
 
     // /CCITTFaxDecode parameters from /DecodeParms
-    int  ccitt_k          = -1;    // /K: -1=Group4, 0=Group3-1D, >0=Group3-mixed
+    int  ccitt_k          = 0;     // /K default per PDF spec: 0=Group3-1D, <0=Group4, >0=Group3-mixed
     bool ccitt_black_is_1 = false; // /BlackIs1: true means 1-bit=black
     std::shared_ptr<Buffer> jbig2_globals_data;
   };
@@ -118,6 +122,7 @@ namespace pdflib
     image_filters(),
     raw_stream_data(nullptr),
     decoded_stream_data(nullptr),
+    soft_mask_data(nullptr),
     jbig2_globals_data(nullptr)
   {}
 
@@ -167,9 +172,10 @@ namespace pdflib
       json_xobject_dict = to_json(qpdf_xobject_dict);
     }
 
-    init_image_properties();
     init_filters();
+    init_image_properties();
     init_stream_data();
+    init_soft_mask_data();
   }
 
   void pdf_resource<PAGE_XOBJECT_IMAGE>::init_image_properties()
@@ -392,9 +398,15 @@ namespace pdflib
       }
     else
       {
-	// p 210, table 90: Default decode arrays
-	if(color_space=="/DeviceGray")
+        if(image_mask)
+          {
+            LOG_S(INFO) << "no `/Decode` found: using default [0 1] for image mask";
+            decode_array = {0.0, 1.0};
+            decode_present = true;
+          }
+        else if(color_space=="/DeviceGray")
 	  {
+	    // p 210, table 90: Default decode arrays
 	    LOG_S(WARNING) << "no `/Decode` found: falling back on default for " << color_space;
 	    decode_array = {
 	      //1, 0
@@ -447,15 +459,43 @@ namespace pdflib
     if(json_xobject_dict.count("/DecodeParms"))
       {
         auto& dp = json_xobject_dict["/DecodeParms"];
+        int decode_parms_index = -1;
+        for(std::size_t i = 0; i < image_filters.size(); ++i)
+          {
+            if(image_filters[i] == "/JBIG2Decode" or image_filters[i] == "/CCITTFaxDecode")
+              {
+                decode_parms_index = static_cast<int>(i);
+                break;
+              }
+          }
+        LOG_S(INFO) << "DecodeParms lookup for xobject_key=" << xobject_key
+                    << " filter_index=" << decode_parms_index
+                    << " filters=" << nlohmann::json(image_filters).dump();
+
         // DecodeParms can be a dict or an array of dicts (one per filter).
-        // For a single /CCITTFaxDecode we always look in the first (or only) dict.
-        auto* parms_ptr = dp.is_object() ? &dp
-                        : (dp.is_array() and not dp.empty() and dp[0].is_object())
-                            ? &dp[0]
-                            : nullptr;
+        // When it is an array, choose the object corresponding to the relevant
+        // filter instead of always assuming index 0.
+        auto* parms_ptr = dp.is_object() ? &dp : nullptr;
+        if(dp.is_array())
+          {
+            if(decode_parms_index >= 0
+               and decode_parms_index < static_cast<int>(dp.size())
+               and dp[decode_parms_index].is_object())
+              {
+                parms_ptr = &dp[decode_parms_index];
+              }
+            else if(not dp.empty() and dp[0].is_object())
+              {
+                LOG_S(WARNING) << "DecodeParms array missing dictionary at filter index "
+                               << decode_parms_index << ", falling back to index 0";
+                parms_ptr = &dp[0];
+              }
+          }
         if(parms_ptr)
           {
             auto& parms = *parms_ptr;
+            LOG_S(INFO) << "selected DecodeParms for xobject_key=" << xobject_key
+                        << ": " << parms.dump();
             if(parms.count("/K") and parms["/K"].is_number())
               {
                 ccitt_k = parms["/K"].get<int>();
@@ -466,11 +506,26 @@ namespace pdflib
               }
 
             auto qpdf_dp = qpdf_xobject_dict.getKey("/DecodeParms");
-            QPDFObjectHandle qpdf_parms =
-              qpdf_dp.isDictionary() ? qpdf_dp
-              : (qpdf_dp.isArray() and qpdf_dp.getArrayNItems() > 0 and qpdf_dp.getArrayItem(0).isDictionary())
-                  ? qpdf_dp.getArrayItem(0)
-                  : QPDFObjectHandle();
+            QPDFObjectHandle qpdf_parms;
+            if(qpdf_dp.isDictionary())
+              {
+                qpdf_parms = qpdf_dp;
+              }
+            else if(qpdf_dp.isArray())
+              {
+                if(decode_parms_index >= 0
+                   and decode_parms_index < qpdf_dp.getArrayNItems()
+                   and qpdf_dp.getArrayItem(decode_parms_index).isDictionary())
+                  {
+                    qpdf_parms = qpdf_dp.getArrayItem(decode_parms_index);
+                  }
+                else if(qpdf_dp.getArrayNItems() > 0 and qpdf_dp.getArrayItem(0).isDictionary())
+                  {
+                    LOG_S(WARNING) << "QPDF DecodeParms array missing dictionary at filter index "
+                                   << decode_parms_index << ", falling back to index 0";
+                    qpdf_parms = qpdf_dp.getArrayItem(0);
+                  }
+              }
 
             if(qpdf_parms.isDictionary() and qpdf_parms.hasKey("/JBIG2Globals"))
               {
@@ -479,15 +534,32 @@ namespace pdflib
                   {
                     try
                       {
-                        jbig2_globals_data = to_shared_ptr(globals_stream.getRawStreamData());
+                        jbig2_globals_data = to_shared_ptr(globals_stream.getStreamData());
+                        LOG_S(INFO) << "JBIG2Globals source=decoded for xobject_key="
+                                    << xobject_key;
                         LOG_S(INFO) << "JBIG2Globals size: "
                                     << (jbig2_globals_data ? jbig2_globals_data->getSize() : 0)
                                     << " bytes";
                       }
                     catch(std::exception const& e)
                       {
-                        LOG_S(WARNING) << "failed to get JBIG2Globals stream data: " << e.what();
-                        jbig2_globals_data = nullptr;
+                        LOG_S(WARNING) << "failed to get decoded JBIG2Globals stream data: "
+                                       << e.what() << " -- falling back to raw stream data";
+                        try
+                          {
+                            jbig2_globals_data = to_shared_ptr(globals_stream.getRawStreamData());
+                            LOG_S(INFO) << "JBIG2Globals source=raw for xobject_key="
+                                        << xobject_key;
+                            LOG_S(INFO) << "JBIG2Globals size: "
+                                        << (jbig2_globals_data ? jbig2_globals_data->getSize() : 0)
+                                        << " bytes";
+                          }
+                        catch(std::exception const& raw_e)
+                          {
+                            LOG_S(WARNING) << "failed to get raw JBIG2Globals stream data: "
+                                           << raw_e.what();
+                            jbig2_globals_data = nullptr;
+                          }
                       }
                   }
                 else
@@ -569,6 +641,90 @@ namespace pdflib
         LOG_S(WARNING) << "failed to get decoded stream data: " << e.what();
         decoded_stream_data = nullptr;
       }
+  }
+
+  void pdf_resource<PAGE_XOBJECT_IMAGE>::init_soft_mask_data()
+  {
+    soft_mask_data.reset();
+
+    if(not qpdf_xobject_dict.hasKey("/SMask"))
+      {
+        return;
+      }
+
+    auto qpdf_smask = qpdf_xobject_dict.getKey("/SMask");
+    if(not qpdf_smask.isStream())
+      {
+        LOG_S(WARNING) << "SMask present but is not a stream for xobject_key=" << xobject_key;
+        return;
+      }
+
+    pdf_resource<PAGE_XOBJECT_IMAGE> smask;
+    smask.set(xobject_key + "/SMask", qpdf_smask);
+
+    if(smask.get_image_width() != image_width or smask.get_image_height() != image_height)
+      {
+        LOG_S(WARNING) << "SMask size mismatch for xobject_key=" << xobject_key
+                       << " image=" << image_width << "x" << image_height
+                       << " smask=" << smask.get_image_width() << "x" << smask.get_image_height();
+        return;
+      }
+
+    const bool gray_mask =
+      smask.get_color_space() == "/DeviceGray"
+      or (smask.get_color_space().find("/ICCBased") != std::string::npos
+          and smask.get_icc_components() == 1);
+    if(not gray_mask)
+      {
+        LOG_S(WARNING) << "SMask color space unsupported for xobject_key=" << xobject_key
+                       << " smask_cs=" << smask.get_color_space()
+                       << " smask_icc_components=" << smask.get_icc_components();
+        return;
+      }
+
+    if(smask.get_bits_per_component() != 8)
+      {
+        LOG_S(WARNING) << "SMask bits/component unsupported for xobject_key=" << xobject_key
+                       << " smask_bpc=" << smask.get_bits_per_component();
+        return;
+      }
+
+    if(not smask.has_decoded_stream_data())
+      {
+        LOG_S(WARNING) << "SMask has no decoded stream data for xobject_key=" << xobject_key;
+        return;
+      }
+
+    auto smask_buf = smask.get_decoded_stream_data();
+    const size_t expected = static_cast<size_t>(image_width) * image_height;
+    if(smask_buf->getSize() < expected)
+      {
+        LOG_S(WARNING) << "SMask decoded stream too small for xobject_key=" << xobject_key
+                       << " size=" << smask_buf->getSize()
+                       << " expected>=" << expected;
+        return;
+      }
+
+    auto out = std::make_shared<std::vector<uint8_t>>();
+    out->resize(expected);
+
+    auto const* src = reinterpret_cast<uint8_t const*>(smask_buf->getBuffer());
+    auto const decode = smask.get_decode_array();
+    const bool has_decode = smask.has_decode_array() and decode.size() >= 2;
+    for(size_t i = 0; i < expected; ++i)
+      {
+        uint8_t alpha = src[i];
+        if(has_decode)
+          {
+            alpha = jpeg::apply_decode_component(alpha, decode[0], decode[1]);
+          }
+        (*out)[i] = alpha;
+      }
+
+    soft_mask_data = std::move(out);
+
+    LOG_S(INFO) << "decoded SMask for xobject_key=" << xobject_key
+                << " alpha_size=" << soft_mask_data->size();
   }
 
   // --- Getters ---
@@ -676,6 +832,16 @@ namespace pdflib
   std::shared_ptr<Buffer> pdf_resource<PAGE_XOBJECT_IMAGE>::get_decoded_stream_data() const
   {
     return decoded_stream_data;
+  }
+
+  bool pdf_resource<PAGE_XOBJECT_IMAGE>::has_soft_mask_data() const
+  {
+    return (soft_mask_data != nullptr and not soft_mask_data->empty());
+  }
+
+  std::shared_ptr<std::vector<uint8_t>> pdf_resource<PAGE_XOBJECT_IMAGE>::get_soft_mask_data() const
+  {
+    return soft_mask_data;
   }
 
   // --- File I/O ---
