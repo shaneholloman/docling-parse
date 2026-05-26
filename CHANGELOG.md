@@ -1,3 +1,13 @@
+## [v6.1.0](https://github.com/docling-project/docling-parse/releases/tag/v6.1.0) - 2026-05-26
+
+### Feature
+
+* Release unused python memory ([#274](https://github.com/docling-project/docling-parse/issues/274)) ([`537461a`](https://github.com/docling-project/docling-parse/commit/537461a5da1f32db649cc29cf7569ee04f7379cb))
+
+### Performance
+
+* Update perf scripts ([#271](https://github.com/docling-project/docling-parse/issues/271)) ([`f53ab21`](https://github.com/docling-project/docling-parse/commit/f53ab215586570df4cafb892a5845b8bd1297eca))
+
 ## [v6.0.0](https://github.com/docling-project/docling-parse/releases/tag/v6.0.0) - 2026-05-11
 
 ### Feature
