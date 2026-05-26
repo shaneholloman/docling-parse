@@ -4,8 +4,11 @@
 #define PDF_DOCUMENT_DECODER_H
 
 #include <fstream>
+#include <mutex>
 #include <optional>
+#include <qpdf/QPDFAcroFormDocumentHelper.hh>
 #include <qpdf/QPDF.hh>
+#include <qpdf/QPDFWriter.hh>
 //#include <qpdf/QPDFPageObjectHelper.hh>
 
 namespace pdflib
@@ -46,6 +49,7 @@ namespace pdflib
     // Decode a single page and return the page decoder directly
     page_decoder_ptr decode_page(int page_number,
                                  const decode_config& config);
+    page_decoder_ptr make_thread_safe_page_decoder(int page_number);
     
     // New: Direct access to page decoders (typed API)
     bool has_page_decoder(int page_number);
@@ -62,6 +66,8 @@ namespace pdflib
 
   private:
 
+    std::shared_ptr<std::string> get_thread_safe_page_buffer(int page_ind);
+    
     void update_qpdf_logger();
 
     void ensure_annots_loaded();
@@ -69,12 +75,16 @@ namespace pdflib
     void update_timings(pdf_timings& timings_, bool set_timer);
 
     bool process_document_components();
+    std::shared_ptr<std::string> build_canonical_thread_safe_buffer();
 
   private:
 
     std::string filename;
     std::shared_ptr<std::string> buffer; // keep a shared copy, in order to not let it expire
     std::optional<std::string> password; // stored for thread-safe page decoding
+
+    std::mutex thread_safe_buffer_mutex;
+    bool needs_thread_safe_canonicalization;
 
     pdf_timings timings;
 
@@ -95,7 +105,9 @@ namespace pdflib
   pdf_decoder<DOCUMENT>::pdf_decoder():
     filename(""),
     buffer(nullptr),
+
     password(std::nullopt),
+    needs_thread_safe_canonicalization(false),
 
     timings({}),
     qpdf_document(),
@@ -116,7 +128,9 @@ namespace pdflib
   pdf_decoder<DOCUMENT>::pdf_decoder(pdf_timings& timings_):
     filename(""),
     buffer(nullptr),
+
     password(std::nullopt),
+    needs_thread_safe_canonicalization(false),
 
     timings(timings_),
     qpdf_document(),
@@ -179,41 +193,6 @@ namespace pdflib
     annots_loaded = true;
   }
 
-  bool pdf_decoder<DOCUMENT>::process_document_components()
-  {
-    utils::timer timer;
-
-    if(qpdf_root.hasKey("/Pages"))
-      {
-        qpdf_pages = qpdf_root.getKey("/Pages");
-
-        if(qpdf_pages.hasKey("/Count"))
-          {
-            number_of_pages = qpdf_pages.getKey("/Count").getIntValue();
-          }
-        else
-          {
-            LOG_S(WARNING) << "filename: " << filename << " has no `/Count`";
-            number_of_pages = 0;
-            for(QPDFObjectHandle page : qpdf_document.getAllPages())
-              {
-                number_of_pages += 1;
-              }
-          }
-
-        LOG_S(INFO) << "#-pages: " << number_of_pages;
-      }
-    else
-      {
-        LOG_S(ERROR) << "filename: " << filename << " has no pages";
-        return false;
-      }
-
-    timings.add_timing(pdf_timings::KEY_PROCESS_DOCUMENT_COMPONENTS, timer.get_time());
-
-    return true;
-  }
-
   nlohmann::json pdf_decoder<DOCUMENT>::get_annotations()
   {
     ensure_annots_loaded();
@@ -231,43 +210,6 @@ namespace pdflib
     ensure_annots_loaded();
     return json_annots["table_of_contents"];
   }
-
-  /*
-    bool pdf_decoder<DOCUMENT>::process_document_from_file(std::string& _filename,
-    std::optional<std::string>& password)
-    {
-    try
-    {
-    if (password.has_value())
-    {
-    qpdf_document.processFile(filename.c_str(), password.value().c_str());
-    }
-    else
-    {
-    qpdf_document.processFile(filename.c_str());
-    }
-    LOG_S(INFO) << "filename: " << filename << " processed by qpdf!";
-
-    qpdf_root  = qpdf_document.getRoot();
-    }
-    catch(const std::exception& exc)
-    {
-    LOG_S(ERROR) << "filename: " << filename << " can not be processed by qpdf: " << exc.what();
-    return false;
-    }
-
-    timings.add_timing(pdf_timings::KEY_PROCESS_DOCUMENT_FROM_FILE, timer.get_time());
-
-    if(not process_document_components())
-    {
-    return false;
-    }
-
-    ensure_annots_loaded();
-
-    return true;
-    }
-  */
 
   bool pdf_decoder<DOCUMENT>::process_document_from_file(std::string& _filename,
                                                          std::optional<std::string>& _password)
@@ -311,13 +253,16 @@ namespace pdflib
   {
     buffer = _buffer;
     password = _password;
+
     LOG_S(INFO) << "start processing buffer of size " << buffer->size() << " by qpdf ...";
-
+    
     utils::timer timer;
-
+    
     try
       {
-        if (password.has_value())
+	utils::timer process_timer;
+
+        if(password.has_value())
           {
             qpdf_document.processMemoryFile(description.c_str(),
                                             buffer->c_str(),
@@ -330,17 +275,23 @@ namespace pdflib
                                             buffer->c_str(),
                                             buffer->size());
           }
-        LOG_S(INFO) << "buffer processed by qpdf!";
+        LOG_S(INFO) << "buffer processed by qpdf which took  " << process_timer.get_time() << " sec";
 
+	timings.add_timing(pdf_timings::KEY_QPDF_PROCESS, process_timer.get_time());
+	
         qpdf_root = qpdf_document.getRoot();
+        needs_thread_safe_canonicalization = qpdf_document.anyWarnings();
+
+	if(needs_thread_safe_canonicalization)
+	  {
+	    LOG_S(WARNING) << "qpdf detected inconsistencies!";
+	  }
       }
     catch(const std::exception & exc)
       {
         LOG_S(ERROR) << "could not process buffer by qpdf: " << exc.what();
         return false;
       }
-
-    timings.add_timing(pdf_timings::KEY_PROCESS_DOCUMENT_FROM_BYTESIO, timer.get_time());
 
     if(not process_document_components())
       {
@@ -349,9 +300,114 @@ namespace pdflib
 
     ensure_annots_loaded();
 
+    timings.add_timing(pdf_timings::KEY_PROCESS_DOCUMENT_FROM_BYTESIO, timer.get_time());
+    
     return true;
   }
 
+  bool pdf_decoder<DOCUMENT>::process_document_components()
+  {
+    utils::timer timer;
+
+    if(qpdf_root.hasKey("/Pages"))
+      {
+        qpdf_pages = qpdf_root.getKey("/Pages");
+
+        if(qpdf_pages.hasKey("/Count"))
+          {
+            number_of_pages = qpdf_pages.getKey("/Count").getIntValue();
+          }
+        else
+          {
+            LOG_S(WARNING) << "filename: " << filename << " has no `/Count`";
+            number_of_pages = 0;
+            for(QPDFObjectHandle page : qpdf_document.getAllPages())
+              {
+                number_of_pages += 1;
+              }
+          }
+
+        LOG_S(INFO) << "#-pages: " << number_of_pages;
+      }
+    else
+      {
+        LOG_S(ERROR) << "filename: " << filename << " has no pages";
+        return false;
+      }
+
+    timings.add_timing(pdf_timings::KEY_PROCESS_DOCUMENT_COMPONENTS, timer.get_time());
+
+    return true;
+  }
+  
+  std::shared_ptr<std::string> pdf_decoder<DOCUMENT>::build_canonical_thread_safe_buffer()
+  {
+    utils::timer timer;
+    QPDFWriter writer(qpdf_document);
+    writer.setOutputMemory();
+    writer.setObjectStreamMode(qpdf_o_preserve);
+    writer.setStreamDataMode(qpdf_s_preserve);
+    writer.setPreserveEncryption(true);
+    writer.write();
+
+    auto out = writer.getBufferSharedPointer();
+    timings.add_timing(pdf_timings::KEY_QPDF_BUILD_THREAD_SAFE_BUFFER, timer.get_time());
+    return std::make_shared<std::string>(reinterpret_cast<char const*>(out->getBuffer()),
+                                         out->getSize());
+  }
+
+  std::shared_ptr<std::string> pdf_decoder<DOCUMENT>::get_thread_safe_page_buffer(int page_ind)
+  {
+    std::lock_guard<std::mutex> lock(thread_safe_buffer_mutex);
+
+    std::shared_ptr<std::string> result = NULL; 
+    
+    std::vector<QPDFObjectHandle> qpdf_pages = qpdf_document.getAllPages();
+
+    QPDFObjectHandle qpdf_page = qpdf_pages.at(page_ind);
+    
+    {
+      utils::timer page_timer;
+      QPDF out_pdf;
+      out_pdf.emptyPDF();
+      
+      QPDFPageDocumentHelper out_pages(out_pdf);
+      QPDFAcroFormDocumentHelper out_afdh(out_pdf);
+      QPDFAcroFormDocumentHelper src_afdh(qpdf_document);
+      QPDFPageObjectHelper source_page(qpdf_page);
+      out_pages.addPage(source_page, false);
+      auto out_page = out_pages.getAllPages().at(0);
+      out_afdh.fixCopiedAnnotations(
+          out_page.getObjectHandle(), source_page.getObjectHandle(), src_afdh);
+      
+      QPDFWriter writer(out_pdf);
+      writer.setOutputMemory();
+      writer.setObjectStreamMode(qpdf_o_preserve);
+      writer.setStreamDataMode(qpdf_s_preserve);
+      writer.setPreserveEncryption(true);
+      writer.write();
+      
+      auto out = writer.getBufferSharedPointer();
+
+      result = std::make_shared<std::string>(reinterpret_cast<char const*>(out->getBuffer()),
+					     out->getSize());
+      
+      LOG_S(INFO) << "writing a pdf-page buffer in " << page_timer.get_time() << " [sec]";
+    }
+
+    return result;
+  }
+
+  pdf_decoder<DOCUMENT>::page_decoder_ptr
+  pdf_decoder<DOCUMENT>::make_thread_safe_page_decoder(int page_number)
+  {
+    std::shared_ptr<std::string> page_buffer = get_thread_safe_page_buffer(page_number);
+    return std::make_shared<pdf_decoder<PAGE>>(page_buffer,
+                                               password,
+                                               page_number,
+                                               0);
+  }
+  
   void pdf_decoder<DOCUMENT>::decode_document(const decode_config& config)
   {
     LOG_S(INFO) << "start decoding all pages ...";
@@ -413,7 +469,7 @@ namespace pdflib
     utils::timer timer;
 
     // Check bounds
-    if(page_number < 0 || page_number >= number_of_pages)
+    if((page_number < 0) or (page_number >= number_of_pages))
       {
         LOG_S(ERROR) << "page " << page_number << " is out of bounds (0-" << number_of_pages-1 << ")";
         return nullptr;
@@ -433,11 +489,12 @@ namespace pdflib
 
       if(config.do_thread_safe)
         {
-          // creates its own QPDF document
-          page_decoder = std::make_shared<pdf_decoder<PAGE>>(buffer, password, page_number);	  
+	  LOG_S(INFO) << "decoding page thread-safe";
+          page_decoder = make_thread_safe_page_decoder(page_number);
         }
       else
         {
+	  LOG_S(INFO) << "decoding page thread-unsafe";
           std::vector<QPDFObjectHandle> pages = qpdf_document.getAllPages();
           QPDFObjectHandle qpdf_page = pages.at(page_number);
 

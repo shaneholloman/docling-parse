@@ -20,6 +20,7 @@
 #include <codecvt>
 #endif
 
+#include <pybind/native_memory.h>
 #include <pybind/docling_resources.h>
 
 #include <parse.h>
@@ -99,6 +100,8 @@ namespace docling
 
   protected:
 
+    void maybe_release_native_memory();
+
     pdflib::decode_config config;
     int num_threads;
     int max_concurrent_results;
@@ -120,6 +123,7 @@ namespace docling
     std::atomic<int> tasks_remaining{0};
     std::atomic<bool> started{false};
     std::atomic<int> active_workers{0};
+    std::atomic<int> total_processed_pages{0};
 
     std::vector<std::thread> workers;
   };
@@ -422,6 +426,7 @@ namespace docling
 
     tasks_remaining.store(0);
     active_workers.store(0);
+    total_processed_pages.store(0);
     started.store(false);
   }
 
@@ -448,6 +453,22 @@ namespace docling
     for(int i = 0; i < num_workers; i++)
       {
         workers.emplace_back(&Derived::worker_loop, static_cast<Derived*>(this));
+      }
+  }
+
+  template<typename Derived, typename ResultType>
+  void docling_threaded_base<Derived, ResultType>::maybe_release_native_memory()
+  {
+    const int every_n = config.release_native_memory_every_n_pages;
+    if(every_n <= 0)
+      {
+        return;
+      }
+
+    const int processed = total_processed_pages.fetch_add(1, std::memory_order_relaxed) + 1;
+    if((processed % every_n) == 0)
+      {
+        release_native_memory(processed);
       }
   }
 
