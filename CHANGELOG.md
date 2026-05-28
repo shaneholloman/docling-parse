@@ -1,3 +1,9 @@
+## [v6.2.0](https://github.com/docling-project/docling-parse/releases/tag/v6.2.0) - 2026-05-28
+
+### Feature
+
+* Add materialize_bitmap_bytes flag to skip bitmap byte extraction ([#277](https://github.com/docling-project/docling-parse/issues/277)) ([`918d7b9`](https://github.com/docling-project/docling-parse/commit/918d7b90911403fd2e9fec3eb5550ebaf4590e89))
+
 ## [v6.1.0](https://github.com/docling-project/docling-parse/releases/tag/v6.1.0) - 2026-05-26
 
 ### Feature
