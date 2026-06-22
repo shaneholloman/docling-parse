@@ -5,22 +5,20 @@
 
 #include <render/template_renderer.h>
 #include <render/config.h>
+#include <render/blend2d_font_resolver.h>
 
 #include <blend2d/blend2d.h>
 
 #include <algorithm>
 #include <array>
 #include <cctype>
-#include <climits>
 #include <cmath>
 #include <cstdlib>
-#include <filesystem>
 #include <memory>
 #include <stdexcept>
 #include <string>
-#include <sstream>
 #include <unordered_map>
-#include <vector>
+#include <utility>
 
 namespace pdflib
 {
@@ -31,6 +29,8 @@ namespace pdflib
 
     renderer();
     explicit renderer(render_config config);
+    explicit renderer(render_config config,
+                      std::shared_ptr<blend2d_font_resolver> font_resolver);
 
     void set_size(size_instruction& instr);
     void render_text(text_instruction& instr);
@@ -66,21 +66,19 @@ namespace pdflib
     render_config config_;
 
     mutable BLImage    image_;  // internal canvas (PRGB32 format)
+    mutable BLContext  context_;
+    mutable bool       context_active_ = false;
     std::array<int, 3> shape_;  // {height, width, 4}
     double scale_x_ = 1.0;     // pdf-to-canvas scale along x
     double scale_y_ = 1.0;     // pdf-to-canvas scale along y
     double origin_x_ = 0.0;    // crop_bbox x origin (pdf units)
     double origin_y_ = 0.0;    // crop_bbox y origin (pdf units, y-up)
 
-    // Lazily-built map from normalized font stem (e.g. "times new roman bold")
-    // to its absolute file path.
-    std::unordered_map<std::string, std::string> font_index_;
+    std::shared_ptr<blend2d_font_resolver> font_resolver_;
+    std::unordered_map<std::string, BLFontFace> local_font_cache_;
 
-    // Cache: normalized PDF font name → best-matched font file path.
-    std::unordered_map<std::string, std::string> match_cache_;
-
-    // Cache: cache_key → loaded BLFontFace.
-    std::unordered_map<std::string, BLFontFace> font_cache_;
+    BLContext& page_context();
+    void finish_page_context() const;
 
     // Convert PDF coordinates (origin at crop_bbox bottom-left, y-up) to
     // canvas coordinates (origin top-left, y-down), applying scale.
@@ -88,58 +86,6 @@ namespace pdflib
     double canvas_y(double pdf_y) const
     {
       return static_cast<double>(shape_[0]) - (pdf_y - origin_y_) * scale_y_;
-    }
-
-    // Normalize a font name for fuzzy comparison:
-    //   1. strip leading '/'
-    //   2. strip subset prefix like "ABCDEF+"
-    //   3. replace '-' with ' '
-    //   4. insert spaces at camelCase boundaries
-    //   5. lowercase
-    //   6. strip PDF/PS suffixes (psmt, ps, mt)
-    static std::string normalize_font_name(const std::string& name)
-    {
-      std::string s = name;
-      if (not s.empty() and s[0] == '/') { s = s.substr(1); }
-      // strip 6-letter uppercase subset prefix, e.g. "ABCDEF+"
-      if (s.size() > 7 and s[6] == '+' and
-          std::all_of(s.begin(), s.begin() + 6,
-                      [](char c){ return std::isupper(static_cast<unsigned char>(c)); }))
-        {
-          s = s.substr(7);
-        }
-      std::replace(s.begin(), s.end(), '-', ' ');
-      // split camelCase: insert space before uppercase that follows lowercase
-      std::string expanded;
-      for (size_t i = 0; i < s.size(); ++i)
-        {
-          if (i > 0
-              and std::isupper(static_cast<unsigned char>(s[i]))
-              and std::islower(static_cast<unsigned char>(s[i - 1])))
-            {
-              expanded += ' ';
-            }
-          expanded += static_cast<char>(
-            std::tolower(static_cast<unsigned char>(s[i])));
-        }
-      // strip known PS/PDF suffixes at the end
-      for (const auto& suf : {" psmt", " ps", " mt"})
-        {
-          const std::string sfx(suf);
-          if (expanded.size() >= sfx.size() and
-              expanded.compare(expanded.size() - sfx.size(),
-                               sfx.size(), sfx) == 0)
-            {
-              expanded.resize(expanded.size() - sfx.size());
-              break;
-            }
-        }
-      // trim trailing spaces
-      while (not expanded.empty() and expanded.back() == ' ')
-        {
-          expanded.pop_back();
-        }
-      return expanded;
     }
 
     static bool should_fit_glyph_bbox_to_target(const std::string& text)
@@ -176,141 +122,10 @@ namespace pdflib
       return false;
     }
 
-    // Build font_index_ by scanning standard system font directories.
-    void build_font_index()
-    {
-      if (not font_index_.empty()) { return; }
-      namespace fs = std::filesystem;
-      const std::vector<std::string> font_dirs = {
-        "/System/Library/Fonts",
-        "/System/Library/Fonts/Supplemental",
-        "/Library/Fonts",
-      };
-      for (const auto& dir : font_dirs)
-        {
-          if (not fs::is_directory(dir)) { continue; }
-          for (const auto& entry : fs::directory_iterator(dir))
-            {
-              const auto& p = entry.path();
-              const std::string ext = p.extension().string();
-              if (ext != ".ttf" and ext != ".otf" and ext != ".ttc") { continue; }
-              const std::string stem = p.stem().string();
-              const std::string norm = normalize_font_name(stem);
-              // first entry wins (earlier dirs take priority)
-              if (font_index_.find(norm) == font_index_.end())
-                {
-                  font_index_[norm] = p.string();
-                }
-            }
-        }
-      LOG_S(INFO) << "blend2d: font index built with "
-                  << font_index_.size() << " entries";
-    }
-
-    // Find the best-matching font file path for the given normalized query.
-    // Uses token overlap (Jaccard-style): score = |query_tokens ∩ cand_tokens|.
-    // Returns empty string if nothing scores > 0.
-    std::string fuzzy_find_font(const std::string& norm_query)
-    {
-      auto is_style_token = [](const std::string& tok) -> bool
-      {
-        static const std::array<const char*, 11> kStyleTokens = {
-          "regular", "normal", "roman", "book", "medium",
-          "bold", "italic", "oblique", "light", "thin", "black"
-        };
-        return std::find(kStyleTokens.begin(), kStyleTokens.end(), tok) != kStyleTokens.end();
-      };
-      auto significant_tokens = [&](const std::vector<std::string>& toks) -> std::vector<std::string>
-      {
-        std::vector<std::string> out;
-        for (const auto& tok : toks)
-          {
-            if (is_style_token(tok))
-              {
-                continue;
-              }
-            out.push_back(tok);
-          }
-        return out;
-      };
-      auto vectors_equal = [](const std::vector<std::string>& lhs,
-                              const std::vector<std::string>& rhs) -> bool
-      {
-        if (lhs.size() != rhs.size()) { return false; }
-        for (size_t i = 0; i < lhs.size(); ++i)
-          {
-            if (lhs[i] != rhs[i])
-              {
-                return false;
-              }
-          }
-        return true;
-      };
-
-      auto split_tokens = [](const std::string& s) -> std::vector<std::string>
-      {
-        std::vector<std::string> toks;
-        std::istringstream iss(s);
-        std::string tok;
-        while (iss >> tok) { toks.push_back(tok); }
-        return toks;
-      };
-
-      const auto q_toks = split_tokens(norm_query);
-      if (q_toks.empty()) { return {}; }
-      const auto q_sig_toks = significant_tokens(q_toks);
-      if (q_sig_toks.empty()) { return {}; }
-
-      // Only accept candidates with the exact same significant family/script
-      // tokens. This rejects cross-script variants like:
-      //   "noto sans" -> "noto sans mongolian"
-      //   "noto sans jp" -> "noto sans mongolian"
-
-      // Minimum Jaccard similarity required to accept a fuzzy match.
-      // A raw intersection score of 1 on "regular" alone yields J ≈ 0.14
-      // (1 shared token out of 7 in the union), which is too low and causes
-      // wrong fonts (e.g. NotoSansMongolian for ShinMGoPr6N) to be selected.
-      const float kMinJaccard = config_.font_similarity_cutoff;
-
-      std::string best_path;
-      float best_jaccard    = 0.0f;
-      int best_size_delta   = INT_MAX;
-
-      for (const auto& [norm_name, path] : font_index_)
-        {
-          const auto c_toks = split_tokens(norm_name);
-          const auto c_sig_toks = significant_tokens(c_toks);
-          if (not vectors_equal(c_sig_toks, q_sig_toks)) { continue; }
-          int score = 0;
-          const auto max_tokens = std::min(q_toks.size(), c_toks.size());
-          for (size_t i = 0; i < max_tokens; ++i)
-            {
-              if (q_toks[i] == c_toks[i])
-                {
-                  ++score;
-                }
-            }
-          if (score == 0) { continue; }
-          const float jaccard = static_cast<float>(score) /
-                                static_cast<float>(q_toks.size() + c_toks.size() - score);
-          if (jaccard < kMinJaccard) { continue; }
-          const int delta = std::abs(static_cast<int>(c_toks.size()) -
-                                     static_cast<int>(q_toks.size()));
-          if (jaccard > best_jaccard or (jaccard == best_jaccard and delta < best_size_delta))
-            {
-              best_jaccard    = jaccard;
-              best_size_delta = delta;
-              best_path       = path;
-            }
-        }
-
-      return best_path;
-    }
-
     // Return a BLFontFace for the given PDF font names, falling back to a
     // system font if none can be resolved.  Results are cached.
-    BLFontFace& resolve_font_face(const std::string& font_name,
-                                  const std::string& base_font);
+    BLFontFace resolve_font_face(const std::string& font_name,
+                                 const std::string& base_font);
 
     static bool nearly_equal(double a, double b, double eps = 1e-6)
     {
@@ -436,12 +251,64 @@ namespace pdflib
   // ---------------------------------------------------------------------------
 
   inline renderer<BLEND2D>::renderer()
-    : shape_({0, 0, 4})
+    : shape_({0, 0, 4}),
+      font_resolver_(blend2d_font_resolver::default_resolver())
   {}
 
   inline renderer<BLEND2D>::renderer(render_config config)
-    : config_(config), shape_({0, 0, 4})
+    : config_(config),
+      shape_({0, 0, 4}),
+      font_resolver_(blend2d_font_resolver::default_resolver())
   {}
+
+  inline renderer<BLEND2D>::renderer(render_config config,
+                                     std::shared_ptr<blend2d_font_resolver> font_resolver)
+    : config_(config),
+      shape_({0, 0, 4}),
+      font_resolver_(font_resolver ? std::move(font_resolver)
+                                   : blend2d_font_resolver::default_resolver())
+  {}
+
+  inline BLContext& renderer<BLEND2D>::page_context()
+  {
+    if (context_active_)
+      {
+        return context_;
+      }
+
+    if (shape_[0] == 0 or shape_[1] == 0)
+      {
+        throw std::runtime_error("renderer<BLEND2D>::page_context: canvas is empty");
+      }
+
+    const BLResult err = context_.begin(image_);
+    if (err != BL_SUCCESS)
+      {
+        throw std::runtime_error(
+          "renderer<BLEND2D>::page_context: failed to begin Blend2D context "
+          "(BLResult=" + std::to_string(err) + ")");
+      }
+
+    context_active_ = true;
+    return context_;
+  }
+
+  inline void renderer<BLEND2D>::finish_page_context() const
+  {
+    if (not context_active_)
+      {
+        return;
+      }
+
+    const BLResult err = context_.end();
+    context_active_ = false;
+    if (err != BL_SUCCESS)
+      {
+        throw std::runtime_error(
+          "renderer<BLEND2D>::finish_page_context: failed to end Blend2D context "
+          "(BLResult=" + std::to_string(err) + ")");
+      }
+  }
 
   // ---------------------------------------------------------------------------
   // set_size
@@ -449,6 +316,8 @@ namespace pdflib
 
   inline void renderer<BLEND2D>::set_size(size_instruction& instr)
   {
+    finish_page_context();
+
     const auto& bbox = instr.crop_bbox;
     const int pdf_w  = bbox[2] - bbox[0];
     const int pdf_h  = bbox[3] - bbox[1];
@@ -473,119 +342,47 @@ namespace pdflib
     image_.create(width, height, BL_FORMAT_PRGB32);
 
     // Initialise canvas to opaque white.
-    BLContext ctx(image_);
-    ctx.set_comp_op(BL_COMP_OP_SRC_COPY);
-    ctx.set_fill_style(BLRgba32(0xFFFFFFFFu));
-    ctx.fill_all();
-    ctx.end();
+    const BLResult ctx_res = context_.begin(image_);
+    if (ctx_res != BL_SUCCESS)
+      {
+        throw std::runtime_error(
+          "renderer<BLEND2D>::set_size: failed to begin Blend2D context "
+          "(BLResult=" + std::to_string(ctx_res) + ")");
+      }
+    context_active_ = true;
+
+    context_.set_comp_op(BL_COMP_OP_SRC_COPY);
+    context_.set_fill_style(BLRgba32(0xFFFFFFFFu));
+    context_.fill_all();
+    context_.set_comp_op(BL_COMP_OP_SRC_OVER);
   }
 
   // ---------------------------------------------------------------------------
   // resolve_font_face
   //
-  // Resolves the best-matching system font file for the given PDF font names
-  // and returns a cached BLFontFace.
-  //
-  // When config_.resolve_fonts is true the full lookup pipeline runs:
-  //   1. Build the font index on first call (scan system font dirs).
-  //   2. Normalize the PDF font name and check the match_cache_.
-  //   3. Try an exact match in the font_index_.
-  //   4. Fall back to token-overlap fuzzy matching.
-  // When config_.resolve_fonts is false the hardcoded fallback is used directly.
+  // Resolves a BLFontFace through the shared resolver and keeps only a small
+  // per-page alias cache in the renderer hot path.
   // ---------------------------------------------------------------------------
 
-  inline BLFontFace& renderer<BLEND2D>::resolve_font_face(
+  inline BLFontFace renderer<BLEND2D>::resolve_font_face(
       const std::string& font_name,
       const std::string& base_font)
   {
-    // BLFontFace cache key: prefer font_name, fall back to base_font.
     const std::string& cache_key = (not font_name.empty() and font_name != "null")
                                      ? font_name : base_font;
 
-    auto it = font_cache_.find(cache_key);
-    if (it != font_cache_.end())
+    auto itr = local_font_cache_.find(cache_key);
+    if (itr != local_font_cache_.end())
       {
-        return it->second;
+        return itr->second;
       }
 
-    namespace fs = std::filesystem;
-    std::string found_path;
-
-    if (config_.resolve_fonts)
-      {
-        build_font_index();
-
-        // Normalize each candidate name and check match_cache_ first.
-        const std::string norm_query = normalize_font_name(cache_key);
-
-        auto mc = match_cache_.find(norm_query);
-        if (mc != match_cache_.end())
-          {
-            found_path = mc->second;
-          }
-        else
-          {
-            // 1. Exact match in the index.
-            auto ei = font_index_.find(norm_query);
-            if (ei != font_index_.end())
-              {
-                found_path = ei->second;
-                LOG_S(INFO) << "blend2d: exact font match '"
-                            << norm_query << "' → '" << found_path << "'";
-              }
-            else
-              {
-                // 2. Fuzzy token-overlap match.
-                found_path = fuzzy_find_font(norm_query);
-                if (not found_path.empty())
-                  {
-                    LOG_S(INFO) << "blend2d: fuzzy font match '"
-                                << norm_query << "' → '" << found_path << "'";
-                  }
-              }
-            match_cache_[norm_query] = found_path;
-          }
-      }
-
-    // Hard-coded fallback (always present on macOS).
-    if (found_path.empty())
-      {
-        for (const auto& fallback : {
-               "/System/Library/Fonts/Helvetica.ttc",
-               "/System/Library/Fonts/Arial.ttf",
-               "/Library/Fonts/Arial.ttf",
-             })
-          {
-            if (fs::exists(fallback))
-              {
-                found_path = fallback;
-                break;
-              }
-          }
-        if (config_.resolve_fonts)
-          {
-            LOG_S(WARNING) << "blend2d: no font match for '"
-                           << cache_key << "', using fallback '" << found_path << "'";
-          }
-      }
-
-    BLFontFace face;
-    if (not found_path.empty())
-      {
-        const BLResult res = face.create_from_file(found_path.c_str());
-        if (res != BL_SUCCESS)
-          {
-            LOG_S(WARNING) << "blend2d: failed to load '" << found_path
-                           << "' (BLResult=" << res << ")";
-          }
-      }
-    else
-      {
-        LOG_S(WARNING) << "blend2d: no font file found for '" << cache_key << "'";
-      }
-
-    font_cache_.emplace(cache_key, std::move(face));
-    return font_cache_.at(cache_key);
+    BLFontFace face = font_resolver_->resolve_font_face(cache_key,
+                                                        base_font,
+                                                        config_.resolve_fonts,
+                                                        config_.font_similarity_cutoff);
+    auto [inserted_itr, inserted] = local_font_cache_.emplace(cache_key, face);
+    return inserted_itr->second;
   }
 
   // ---------------------------------------------------------------------------
@@ -614,8 +411,8 @@ namespace pdflib
     const double quad_h = std::abs(y3-y0);
     const double size   = ((quad_h > 0.5) ? quad_h : instr.get_font_size()) * scale_y_;
 
-    BLFontFace& face = resolve_font_face(instr.get_font_name(),
-                                         instr.get_base_font());
+    BLFontFace face = resolve_font_face(instr.get_font_name(),
+                                        instr.get_base_font());
 
     LOG_S(INFO) << "face: " << face.is_valid();
 
@@ -627,7 +424,7 @@ namespace pdflib
     bbox_path.line_to(x3, y3);
     bbox_path.close();
 
-    BLContext ctx(image_);
+    BLContext& ctx = page_context();
 
     LOG_S(INFO) << "writing text: `" << instr.get_text() << "`, size: " << size << "";
     if (face.is_valid() and size > 0.5)
@@ -655,8 +452,6 @@ namespace pdflib
         ctx.set_stroke_width(0.5);
         ctx.stroke_path(bbox_path);
       }
-
-    ctx.end();
   }
 
   // ---------------------------------------------------------------------------
@@ -717,13 +512,13 @@ namespace pdflib
                 << " cell_span=" << cell_span
                 << " em_size=" << em_size << " size=" << size;
 
-    BLFontFace& face = resolve_font_face(instr.get_font_name(),
-                                         instr.get_base_font());
+    BLFontFace face = resolve_font_face(instr.get_font_name(),
+                                        instr.get_base_font());
     LOG_S(INFO) << "face valid=" << face.is_valid()
                 << " font_name=`" << instr.get_font_name() << "`"
                 << " base_font=`" << instr.get_base_font() << "`";
 
-    BLContext ctx(image_);
+    BLContext& ctx = page_context();
 
     if (face.is_valid() and size > 0.5)
       {
@@ -800,8 +595,6 @@ namespace pdflib
         ctx.set_stroke_width(0.5);
         ctx.stroke_path(bbox_path);
       }
-
-    ctx.end();
   }
 
   // ---------------------------------------------------------------------------
@@ -861,15 +654,13 @@ namespace pdflib
                 << " cell_span=" << cell_span
                 << " em_size=" << em_size << " size=" << size;
 
-    BLFontFace& face = resolve_font_face(instr.get_font_name(),
-                                         instr.get_base_font());
+    BLFontFace face = resolve_font_face(instr.get_font_name(),
+                                        instr.get_base_font());
     LOG_S(INFO) << "face valid=" << face.is_valid()
                 << " font_name=`" << instr.get_font_name() << "`"
                 << " base_font=`" << instr.get_base_font() << "`";
 
-    LOG_S(INFO) << "render_text: before BLContext construction";
-    BLContext ctx(image_);
-    LOG_S(INFO) << "render_text: after BLContext construction";
+    BLContext& ctx = page_context();
 
     auto draw_bbox_fallback = [&]()
     {
@@ -901,7 +692,6 @@ namespace pdflib
                                << " font_name=`" << instr.get_font_name() << "`"
                                << " base_font=`" << instr.get_base_font() << "`";
                 draw_bbox_fallback();
-                ctx.end();
                 return;
               }
 
@@ -931,7 +721,6 @@ namespace pdflib
                 LOG_S(WARNING) << "render_text: apply_transform failed"
                                << " (BLResult=" << transform_res << ")";
                 draw_bbox_fallback();
-                ctx.end();
                 return;
               }
             LOG_S(INFO) << "render_text: before set_fill_style";
@@ -951,7 +740,6 @@ namespace pdflib
                                << " base_font=`" << instr.get_base_font() << "`";
                 ctx.restore();
                 draw_bbox_fallback();
-                ctx.end();
                 return;
               }
             const auto* placement_data = gb.placement_data();
@@ -960,7 +748,6 @@ namespace pdflib
                 LOG_S(WARNING) << "render_text: glyph placement data is null, using fallback";
                 ctx.restore();
                 draw_bbox_fallback();
-                ctx.end();
                 return;
               }
             BLPoint draw_origin(0.0, 0.0);
@@ -1067,7 +854,6 @@ namespace pdflib
                                    << " (BLResult=" << translate_res << ")";
                     ctx.restore();
                     draw_bbox_fallback();
-                    ctx.end();
                     return;
                   }
                 const BLResult scale_res = ctx.scale(bbox_fit_scale);
@@ -1077,7 +863,6 @@ namespace pdflib
                                    << " (BLResult=" << scale_res << ")";
                     ctx.restore();
                     draw_bbox_fallback();
-                    ctx.end();
                     return;
                   }
                 draw_origin.reset(0.0, 0.0);
@@ -1094,7 +879,6 @@ namespace pdflib
                                << " (BLResult=" << text_res << ")"
                                << " text=`" << instr.get_text() << "`";
                 draw_bbox_fallback();
-                ctx.end();
                 return;
               }
 
@@ -1122,8 +906,6 @@ namespace pdflib
         ctx.set_stroke_width(0.5);
         ctx.stroke_path(bbox_path);
       }
-
-    ctx.end();
   }
 
   // ---------------------------------------------------------------------------
@@ -1169,7 +951,7 @@ namespace pdflib
     const auto fmt = instr.get_pixel_format();
     const auto fill_rgb = instr.get_rgb_filling();
 
-    BLContext ctx(image_);
+    BLContext& ctx = page_context();
     const bool axis_aligned = is_axis_aligned(q);
     int quarter_turns = -1;
     const bool right_angle = is_right_angle_rotation(q, quarter_turns);
@@ -1198,7 +980,6 @@ namespace pdflib
                        << " has_data=" << (instr.has_data() ? "true" : "false")
                        << " — drawing semi-transparent yellow placeholder";
         render_bitmap_placeholder(ctx, q, axis_aligned);
-        ctx.end();
         return;
       }
 
@@ -1211,7 +992,6 @@ namespace pdflib
                        << ") for shape " << sh << "x" << sw << "x" << sc
                        << " — drawing placeholder";
         render_bitmap_placeholder(ctx, q, axis_aligned);
-        ctx.end();
         return;
       }
 
@@ -1336,7 +1116,6 @@ namespace pdflib
                     << ", quarter_turns=" << quarter_turns << ")";
         render_bitmap_affine(ctx, src_img, q, sw, sh);
       }
-    ctx.end();
   }
 
   // ---------------------------------------------------------------------------
@@ -1359,13 +1138,12 @@ namespace pdflib
     path.line_to(canvas_x(instr.get_r_x3()), canvas_y(instr.get_r_y3()));
     path.close();
 
-    BLContext ctx(image_);
+    BLContext& ctx = page_context();
     ctx.set_fill_style(BLRgba32(0x660099FFu));   // A=40%, light blue
     ctx.fill_path(path);
     ctx.set_stroke_style(BLRgba32(0xFF0099FFu));  // A=100%, blue border
     ctx.set_stroke_width(1);
     ctx.stroke_path(path);
-    ctx.end();
   }
 
   // ---------------------------------------------------------------------------
@@ -1395,7 +1173,7 @@ namespace pdflib
         path.close();
       }
     */
-    
+
     const auto& rgb = instr.get_rgb_stroking();
     const uint32_t stroke_color =
       (0xFFu                          << 24) |
@@ -1403,11 +1181,10 @@ namespace pdflib
       (static_cast<uint32_t>(rgb[1])  <<  8) |
        static_cast<uint32_t>(rgb[2]);
 
-    BLContext ctx(image_);
+    BLContext& ctx = page_context();
     ctx.set_stroke_style(BLRgba32(stroke_color));
     ctx.set_stroke_width(1);
     ctx.stroke_path(path);
-    ctx.end();
   }
 
   // ---------------------------------------------------------------------------
@@ -1427,6 +1204,8 @@ namespace pdflib
       {
         return std::make_shared<std::vector<uint8_t>>();
       }
+
+    finish_page_context();
 
     BLImageData img_data;
     image_.get_data(&img_data);
@@ -1468,6 +1247,8 @@ namespace pdflib
       {
         throw std::runtime_error("renderer<BLEND2D>::save: canvas is empty");
       }
+
+    finish_page_context();
 
     const BLResult err = image_.write_to_file(path.c_str());
     if (err != BL_SUCCESS)

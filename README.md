@@ -92,17 +92,17 @@ Parse pages from one or more PDFs in parallel using a thread pool with backpress
 
 ```python
 from docling_parse.pdf_parser import (
+    DecodeConfig,
     DoclingThreadedPdfParser,
     ThreadedPdfParserConfig,
 )
-from docling_parse.pdf_parsers import DecodePageConfig  # type: ignore[import]
 
 parser_config = ThreadedPdfParserConfig(
     loglevel="fatal",
     threads=4,                # worker threads
     max_concurrent_results=32 # cap buffered results to limit memory
 )
-decode_config = DecodePageConfig()
+decode_config = DecodeConfig()
 
 parser = DoclingThreadedPdfParser(
     parser_config=parser_config,
@@ -189,6 +189,12 @@ The latter will only work after a clean `git clone`. If you are developing and u
 ```sh
 # uv pip install --force-reinstall --no-deps -e .
 rm -rf .venv; uv venv; uv pip install --force-reinstall --no-deps -e ".[perf-tools]"
+```
+
+or 
+
+```sh
+BUILD_THREADS=12 uv pip install --force-reinstall --no-deps -e ".[perf]"
 ```
 
 To test the package, run:
