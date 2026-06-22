@@ -1,3 +1,13 @@
+## [v7.0.0](https://github.com/docling-project/docling-parse/releases/tag/v7.0.0) - 2026-06-22
+
+### Feature
+
+* Improve pages/sec and scalability, new decode configuration shape ([#278](https://github.com/docling-project/docling-parse/issues/278)) ([`1d8f70c`](https://github.com/docling-project/docling-parse/commit/1d8f70cfad208d2a5bd96333ad13eaa157cf6339))
+
+### Breaking
+
+* improve pages/sec and scalability, new decode configuration shape ([#278](https://github.com/docling-project/docling-parse/issues/278)) ([`1d8f70c`](https://github.com/docling-project/docling-parse/commit/1d8f70cfad208d2a5bd96333ad13eaa157cf6339))
+
 ## [v6.2.0](https://github.com/docling-project/docling-parse/releases/tag/v6.2.0) - 2026-05-28
 
 ### Feature
