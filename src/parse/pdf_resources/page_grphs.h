@@ -124,7 +124,7 @@ namespace pdflib
                                      pdf_timings& timings)
   {
     LOG_S(INFO) << __FUNCTION__;
-
+    
     double total_grph_time = 0.0;
 
     for(auto& key : qpdf_grphs.getKeys())
@@ -145,10 +145,12 @@ namespace pdflib
 
 	double grph_time = grph_timer.get_time();
 	total_grph_time += grph_time;
-	timings.add_timing(pdf_timings::PREFIX_DECODE_GRPH + key, grph_time);
+	// per-grph (dynamic) timing disabled for now; only the total is reported
+	//timings.add_timing(pdf_timings::PREFIX_DECODE_GRPH + key, grph_time);
       }
 
     timings.add_timing(pdf_timings::KEY_DECODE_GRPHS_TOTAL, total_grph_time);
+    timings.note_attributed(total_grph_time);
   }
 
 }

@@ -166,25 +166,31 @@ namespace pdflib
 	return XOBJECT_UNKNOWN;
       }
     
-    QPDFObjectHandle dict = qpdf_obj.getDict(); // only works on a stream! 
-    nlohmann::json json_dict = to_json(dict);
+    QPDFObjectHandle dict = qpdf_obj.getDict(); // only works on a stream!
 
-    if(json_dict.count("/Subtype"))
+    // Read only the '/Subtype' key directly instead of recursively serialising
+    // the whole xobject dict (including nested /Resources) into json.
+    std::string subtype = "";
+    if(dict.hasKey("/Subtype") and dict.getKey("/Subtype").isName())
       {
-        std::string subtype = json_dict["/Subtype"].get<std::string>();
+        subtype = dict.getKey("/Subtype").getName();
+      }
+    else if(dict.hasKey("/Subtype") and dict.getKey("/Subtype").isString())
+      {
+        subtype = dict.getKey("/Subtype").getUTF8Value();
+      }
 
-        if(subtype=="/Image")
-          {
-            return XOBJECT_IMAGE;
-          }
-        else if(subtype=="/Form")
-          {
-            return XOBJECT_FORM;
-          }
-        else if(subtype=="/PS")
-          {
-            return XOBJECT_POSTSCRIPT;
-          }
+    if(subtype=="/Image")
+      {
+        return XOBJECT_IMAGE;
+      }
+    else if(subtype=="/Form")
+      {
+        return XOBJECT_FORM;
+      }
+    else if(subtype=="/PS")
+      {
+        return XOBJECT_POSTSCRIPT;
       }
 
     LOG_S(ERROR) << "unknown XObject subtype";
@@ -276,10 +282,12 @@ namespace pdflib
 
 	double xobject_time = xobject_timer.get_time();
 	total_xobject_time += xobject_time;
-	timings.add_timing(pdf_timings::PREFIX_DECODE_XOBJECT + key, xobject_time);
+	// per-xobject (dynamic) timing disabled for now; only the total is reported
+	//timings.add_timing(pdf_timings::PREFIX_DECODE_XOBJECT + key, xobject_time);
       }
 
     timings.add_timing(pdf_timings::KEY_DECODE_XOBJECTS_TOTAL, total_xobject_time);
+    timings.note_attributed(total_xobject_time);
   }
 
 }
