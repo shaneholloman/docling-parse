@@ -1,3 +1,13 @@
+## [v7.1.0](https://github.com/docling-project/docling-parse/releases/tag/v7.1.0) - 2026-06-26
+
+### Feature
+
+* Refactoring the parsing of XObjects ([#281](https://github.com/docling-project/docling-parse/issues/281)) ([`163f741`](https://github.com/docling-project/docling-parse/commit/163f7419bd6a98d7667cefe7e9c356b38135f9e8))
+
+### Documentation
+
+* Updates for docling-parse v7 usage ([#280](https://github.com/docling-project/docling-parse/issues/280)) ([`a81339e`](https://github.com/docling-project/docling-parse/commit/a81339efade7a904aac0bb64c0f871d9fbf03e1e))
+
 ## [v7.0.0](https://github.com/docling-project/docling-parse/releases/tag/v7.0.0) - 2026-06-22
 
 ### Feature
