@@ -397,6 +397,7 @@ def test_reference_documents_from_filenames():
         "font_08.pdf": [1],
         "font_09.pdf": [1],
         "font_10.pdf": [1],
+        "2508.13113v2.pdf": [2, 9, 17],
     }
 
     config = DecodeConfig(
