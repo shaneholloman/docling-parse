@@ -993,10 +993,15 @@ class DoclingPdfParser:
         if isinstance(path_or_stream, str):
             path_or_stream = Path(path_or_stream)
 
+        effective_decode_config = decode_config or DecodeConfig()
+
         if isinstance(path_or_stream, Path):
             key = f"key={path_or_stream!s}"  # use filepath as internal handle
             success = self._load_document(
-                key=key, filename=str(path_or_stream), password=password
+                key=key,
+                filename=str(path_or_stream),
+                password=password,
+                keep_qpdf_warnings=effective_decode_config.keep_qpdf_warnings,
             )
 
         elif isinstance(path_or_stream, BytesIO):
@@ -1008,14 +1013,19 @@ class DoclingPdfParser:
             hash = hasher.hexdigest()
 
             key = f"key={hash}"  # use md5 hash as internal handle
-            success = self._load_document_from_bytesio(key=key, data=path_or_stream)
+            success = self._load_document_from_bytesio(
+                key=key,
+                data=path_or_stream,
+                password=password,
+                keep_qpdf_warnings=effective_decode_config.keep_qpdf_warnings,
+            )
 
         if success:
             result_doc = PdfDocument(
                 parser=self.parser,
                 key=key,
                 boundary_type=boundary_type,
-                decode_config=decode_config,
+                decode_config=effective_decode_config,
                 content_config=content_config,
             )
             if not lazy:  # eagerly parse the pages at init time if desired
@@ -1026,7 +1036,11 @@ class DoclingPdfParser:
             raise RuntimeError(f"Failed to load document with key {key}")
 
     def _load_document(
-        self, key: str, filename: str, password: str | None = None
+        self,
+        key: str,
+        filename: str,
+        password: str | None = None,
+        keep_qpdf_warnings: bool = False,
     ) -> bool:
         """Load a document by key and filename.
 
@@ -1039,10 +1053,19 @@ class DoclingPdfParser:
             bool: True if the document was successfully loaded, False otherwise.)")
         """
         return self.parser.load_document(
-            key=key, filename=filename.encode("utf8"), password=password
+            key=key,
+            filename=filename.encode("utf8"),
+            password=password,
+            keep_qpdf_warnings=keep_qpdf_warnings,
         )
 
-    def _load_document_from_bytesio(self, key: str, data: BytesIO) -> bool:
+    def _load_document_from_bytesio(
+        self,
+        key: str,
+        data: BytesIO,
+        password: str | None = None,
+        keep_qpdf_warnings: bool = False,
+    ) -> bool:
         """Load a document by key from a BytesIO-like object.
 
         Parameters:
@@ -1052,7 +1075,12 @@ class DoclingPdfParser:
         Returns:
              bool: True if the document was successfully loaded, False otherwise.)")
         """
-        return self.parser.load_document_from_bytesio(key=key, bytes_io=data)
+        return self.parser.load_document_from_bytesio(
+            key=key,
+            bytes_io=data,
+            password=password,
+            keep_qpdf_warnings=keep_qpdf_warnings,
+        )
 
 
 class ThreadedPdfParserConfig(BaseModel):

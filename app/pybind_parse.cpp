@@ -685,13 +685,15 @@ PYBIND11_MODULE(pdf_parsers, m) {
 	 [](docling::docling_parser &self,
 	    const std::string &key,
 	    const std::string &filename,
-	    std::optional<std::string>& password
+	    std::optional<std::string>& password,
+	    bool keep_qpdf_warnings
 	    ) -> bool {
-	   return self.load_document(key, filename, password);
+	   return self.load_document(key, filename, password, keep_qpdf_warnings);
 	 },
 	 pybind11::arg("key"),
 	 pybind11::arg("filename"),
 	 pybind11::arg("password") = pybind11::none(),
+	 pybind11::arg("keep_qpdf_warnings") = false,
 	 R"(
     Load a document by key and filename.
 
@@ -707,13 +709,18 @@ PYBIND11_MODULE(pdf_parsers, m) {
 	 [](docling::docling_parser &self,
 	    const std::string &key,
 	    pybind11::object bytes_io,
-	    std::optional<std::string>& password
+	    std::optional<std::string>& password,
+	    bool keep_qpdf_warnings
 	    ) -> bool {
-	   return self.load_document_from_bytesio(key, bytes_io, password);
+	   return self.load_document_from_bytesio(key,
+                                                  bytes_io,
+                                                  password,
+                                                  keep_qpdf_warnings);
 	 },
 	 pybind11::arg("key"),
 	 pybind11::arg("bytes_io"),
-	 pybind11::arg("password") = pybind11::none(),	 
+	 pybind11::arg("password") = pybind11::none(),
+	 pybind11::arg("keep_qpdf_warnings") = false,
 	 R"(
     Load a document by key from a BytesIO-like object.
 

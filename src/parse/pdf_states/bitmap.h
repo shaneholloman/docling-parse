@@ -30,7 +30,8 @@ namespace pdflib
 
     pdf_state<BITMAP>& operator=(const pdf_state<BITMAP>& other);
 
-    void Do_image(pdf_resource<PAGE_XOBJECT_IMAGE>& xobj,
+    void Do_image(const std::string& xobject_key,
+                  const pdf_resource<PAGE_XOBJECT_IMAGE>& xobj,
                   clip_state_instruction clip_state = clip_state_instruction());
 
   private:
@@ -186,15 +187,16 @@ namespace pdflib
     return applied_clip ? VISIBLE_BBOX_CLIPPED : VISIBLE_BBOX_NONE;
   }
 
-  void pdf_state<BITMAP>::Do_image(pdf_resource<PAGE_XOBJECT_IMAGE>& xobj,
+  void pdf_state<BITMAP>::Do_image(const std::string& xobject_key,
+                                   const pdf_resource<PAGE_XOBJECT_IMAGE>& xobj,
                                    clip_state_instruction clip_state)
   {
     if(not config.keep_bitmaps) { LOG_S(WARNING) << "skipping " << __FUNCTION__; return; }
 
-    LOG_S(INFO) << "starting to do " << __FUNCTION__ << " for xobject_key=" << xobj.get_key();
+    LOG_S(INFO) << "starting to do " << __FUNCTION__ << " for xobject_key=" << xobject_key;
     
     page_item<PAGE_IMAGE> image;
-    image.xobject_key = xobj.get_key();
+    image.xobject_key = xobject_key;
 
     // --- Compute quad corners and bounding box via the CTM ---
     {
@@ -256,7 +258,7 @@ namespace pdflib
 
     // --- Populate image properties from the XObject ---
     {
-      image.xobject_key        = xobj.get_key();
+      image.xobject_key        = xobject_key;
       image.image_width        = xobj.get_image_width();
       image.image_height       = xobj.get_image_height();
       image.bits_per_component = xobj.get_bits_per_component();
