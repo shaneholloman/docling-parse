@@ -1,3 +1,9 @@
+## [v7.3.0](https://github.com/docling-project/docling-parse/releases/tag/v7.3.0) - 2026-07-01
+
+### Feature
+
+* Caching objects ([#285](https://github.com/docling-project/docling-parse/issues/285)) ([`2bc547e`](https://github.com/docling-project/docling-parse/commit/2bc547ecdecb1e24ebd9c10b22c2c8aca9e0d8a5))
+
 ## [v7.2.0](https://github.com/docling-project/docling-parse/releases/tag/v7.2.0) - 2026-06-29
 
 ### Feature
