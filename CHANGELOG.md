@@ -1,3 +1,9 @@
+## [v7.4.0](https://github.com/docling-project/docling-parse/releases/tag/v7.4.0) - 2026-07-01
+
+### Feature
+
+* Reduce total number of results cached ([#287](https://github.com/docling-project/docling-parse/issues/287)) ([`55d8476`](https://github.com/docling-project/docling-parse/commit/55d8476ed224929bbb6269ee5f9cff7ffda0fd19))
+
 ## [v7.3.0](https://github.com/docling-project/docling-parse/releases/tag/v7.3.0) - 2026-07-01
 
 ### Feature
