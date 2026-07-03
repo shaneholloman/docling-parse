@@ -1,3 +1,10 @@
+## [v7.5.0](https://github.com/docling-project/docling-parse/releases/tag/v7.5.0) - 2026-07-03
+
+### Feature
+
+* Attack embedded fonts ([#291](https://github.com/docling-project/docling-parse/issues/291)) ([`f41aec4`](https://github.com/docling-project/docling-parse/commit/f41aec48e3b42b6d9a4de4afbc110a6f29664925))
+* Improve font resolver ([#290](https://github.com/docling-project/docling-parse/issues/290)) ([`a7f201f`](https://github.com/docling-project/docling-parse/commit/a7f201fdc2b1c6a629c406f38d9b1b67547db1eb))
+
 ## [v7.4.0](https://github.com/docling-project/docling-parse/releases/tag/v7.4.0) - 2026-07-01
 
 ### Feature
