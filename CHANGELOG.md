@@ -1,3 +1,9 @@
+## [v7.6.0](https://github.com/docling-project/docling-parse/releases/tag/v7.6.0) - 2026-07-06
+
+### Feature
+
+* Working on refactoring the parse for shapes ([#293](https://github.com/docling-project/docling-parse/issues/293)) ([`cbe73a8`](https://github.com/docling-project/docling-parse/commit/cbe73a8cc4fae6da7c9bf23914d9571c1c5cf011))
+
 ## [v7.5.0](https://github.com/docling-project/docling-parse/releases/tag/v7.5.0) - 2026-07-03
 
 ### Feature
