@@ -1,3 +1,9 @@
+## [v7.7.0](https://github.com/docling-project/docling-parse/releases/tag/v7.7.0) - 2026-07-08
+
+### Feature
+
+* Build wheel for windows arm64 ([#288](https://github.com/docling-project/docling-parse/issues/288)) ([`9acdc48`](https://github.com/docling-project/docling-parse/commit/9acdc4838e7976c329d5dda150eef1c656011e04))
+
 ## [v7.6.0](https://github.com/docling-project/docling-parse/releases/tag/v7.6.0) - 2026-07-06
 
 ### Feature
