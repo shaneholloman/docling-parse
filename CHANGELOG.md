@@ -1,3 +1,10 @@
+## [v7.7.1](https://github.com/docling-project/docling-parse/releases/tag/v7.7.1) - 2026-07-10
+
+### Fix
+
+* Fixing the word extraction with spaces as blockers ([#296](https://github.com/docling-project/docling-parse/issues/296)) ([`66e4c33`](https://github.com/docling-project/docling-parse/commit/66e4c339578679fb13410d91261ad5160af5220a))
+* Arabic pdf-rendering ([#295](https://github.com/docling-project/docling-parse/issues/295)) ([`ff00fcf`](https://github.com/docling-project/docling-parse/commit/ff00fcfe7e59a5a81c24fb01332a023c75cc8f0f))
+
 ## [v7.7.0](https://github.com/docling-project/docling-parse/releases/tag/v7.7.0) - 2026-07-08
 
 ### Feature
