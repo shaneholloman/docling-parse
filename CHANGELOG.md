@@ -1,3 +1,9 @@
+## [v7.8.0](https://github.com/docling-project/docling-parse/releases/tag/v7.8.0) - 2026-07-10
+
+### Feature
+
+* Adding new top-level methods for page content geometry queries ([#297](https://github.com/docling-project/docling-parse/issues/297)) ([`ef41562`](https://github.com/docling-project/docling-parse/commit/ef415624593d546806423e72fb2b812d811d8161))
+
 ## [v7.7.1](https://github.com/docling-project/docling-parse/releases/tag/v7.7.1) - 2026-07-10
 
 ### Fix
